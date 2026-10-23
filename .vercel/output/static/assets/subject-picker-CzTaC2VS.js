@@ -1,0 +1,1 @@
+import{n as e,t}from"./jsx-runtime-Dk72oS4N.js";e(),t();function n(){let e=[],t=new Date;for(let n=1;n<=14;n++){let r=new Date(t.getFullYear(),t.getMonth()+n,1);e.push({value:`${r.getFullYear()}-${String(r.getMonth()+1).padStart(2,`0`)}`,label:r.toLocaleDateString(`en-NG`,{month:`long`,year:`numeric`})})}return e}export{n as t};

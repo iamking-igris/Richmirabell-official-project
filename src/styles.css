@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --color-paper: #f4efe6;
+  --color-ink: #1a2420;
+  --color-muted: #5e6a62;
+  --color-primary: #0d6b52;
+  --color-primary-fg: #f4fbf8;
+  --color-brass: #a6843d;
+  --color-surface: #fffdf8;
+  --color-line: #e3d9c8;
+  --color-soft: #ebe4d6;
+  --radius: 1rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a {
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  }
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    scale: 0.96;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes drift {
+  from {
+    transform: scale(1.06);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.rise {
+  animation: rise 620ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.rise-2 { animation-delay: 90ms; }
+.rise-3 { animation-delay: 180ms; }
+.rise-4 { animation-delay: 270ms; }
+
+@keyframes drift {
+  from { transform: scale(1.06); }
+  to { transform: scale(1); }
+}
+
+.photo-in {
+  animation: drift 1.4s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.draw-line {
+  stroke-dasharray: 280;
+  stroke-dashoffset: 280;
+  animation: draw 1.8s cubic-bezier(0.2, 0, 0, 1) 0.2s both;
+}
+
+.photo {
+  filter: saturate(0.9) brightness(1.04);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.card-lift {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  height: 1px;
+  width: 100%;
+  background: var(--color-brass);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 220ms ease;
+}
+.nav-link:hover::after,
+.nav-link:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.frame-photo {
+  overflow: hidden;
+}
+.frame-photo img {
+  transition: transform 700ms cubic-bezier(0.2, 0, 0, 1);
+}
+.frame-photo:hover img {
+  transform: scale(1.04);
+}
+
+.reveal {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reveal.armed {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  .reveal.armed.in {
+    opacity: 1;
+    transform: none;
+    transition: opacity 700ms cubic-bezier(0.2, 0, 0, 1), transform 700ms cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee {
+  animation: marquee 28s linear infinite;
+}
+
+.press {
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+.press:hover {
+  transform: translateY(-2px);
+}
+.press:active {
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .press:hover,
+  .press:active {
+    transform: none;
+  }
+}
+
+.faq-open {
+  animation: rise 220ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
