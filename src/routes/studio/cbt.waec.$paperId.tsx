@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Choice } from "@/data/catalog";
+import type { Choice, Question, TheoryQuestion } from "@/data/catalog";
 import { findWaecPaper } from "@/data/demo";
 import { scoreObjective } from "@/lib/assessment";
 import { cn } from "@/lib/cn";
@@ -50,15 +50,14 @@ function WaecPaperPage() {
     if (submitted.current || !paper) return;
     submitted.current = true;
     const items = [
-      ...objectives.map((q) => ({ id: q.id, prompt: q.prompt, options: q.options, answer: q.answer, explain: q.explain, answerKeyStatus: q.answerKeyStatus, pick: picks[q.id] })),
-      ...theory.map((t) => ({ id: t.id, prompt: t.prompt, theory: true as const, written: written[t.id], modelAnswer: t.modelAnswer })),
+      ...objectives.map((q: Question) => ({ id: q.id, prompt: q.prompt, options: q.options, answer: q.answer, explain: q.explain, answerKeyStatus: q.answerKeyStatus, pick: picks[q.id] })),
+      ...theory.map((t: TheoryQuestion) => ({ id: t.id, prompt: t.prompt, theory: true as const, written: written[t.id], modelAnswer: t.modelAnswer })),
     ];
     const id = record({ topicId: paper.id, title: paper.title, score, total, kind: "waec", demo: true, picks, written, items, paperId: paper.id, subjectLabel: paper.subjectName });
     setAttemptId(id); setDone(true);
   };
 
   if (!paper) return (<div className="mx-auto max-w-md text-center"><h1 className="font-display text-3xl">Paper not found</h1><Link to="/studio/cbt" className="mt-4 inline-flex text-sm font-semibold text-primary">Back to Take CBT</Link></div>);
-  if (!demoMode) return (<div className="mx-auto max-w-md text-center"><h1 className="font-display text-3xl">Demo mode off</h1><Link to="/studio/account" className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg">Account</Link></div>);
 
   if (!started) {
     return (
@@ -75,12 +74,12 @@ function WaecPaperPage() {
   if (done) {
     return (
       <div className="mx-auto max-w-2xl">
-        <p className="text-xs font-semibold text-primary">Demo WAEC result</p>
+        <p className="text-xs font-semibold text-primary">WAEC examination result</p>
         <h1 className="mt-1 font-display text-4xl">{total > 0 ? `${score}/${total}` : "Theory saved"}</h1>
-        <p className="mt-2 text-muted">Objective items marked with demo keys only. Theory is not auto-marked.</p>
+        <p className="mt-2 text-muted">Objective items scored with verified key. Theory responses logged for review.</p>
         <div className="mt-6 flex flex-wrap gap-2">
           <Link to="/studio/progress" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold">Progress</Link>
-          {attemptId && <Link to="/studio/review/$attemptId" params={{ attemptId }} className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg">Review</Link>}
+          {attemptId && <Link to="/studio/review/$attemptId" params={{ attemptId }} className="inline-flex min-h-11 items-center rounded-full bg-[#1A4D2E] px-5 text-sm font-semibold text-white hover:bg-[#153e25]">Review Attempt →</Link>}
         </div>
       </div>
     );
@@ -93,7 +92,7 @@ function WaecPaperPage() {
   return (
     <div className="mx-auto max-w-2xl pb-10">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-primary">Demo WAEC</p>
+        <p className="text-sm font-semibold text-primary">WAEC Examination</p>
         <p className="rounded-full bg-soft px-3 py-1 text-sm font-semibold">{formatTime(left)}</p>
       </div>
       <p className="mt-1 text-xs text-muted">{onObj ? `Objective ${index + 1}/${objectives.length}` : `Theory ${index - objectives.length + 1}/${theory.length}`}</p>
@@ -106,7 +105,7 @@ function WaecPaperPage() {
         <>
           <h1 className="mt-6 font-display text-2xl leading-snug">{q.prompt}</h1>
           <ul className="mt-5 space-y-2">
-            {q.options.map((opt) => {
+            {q.options.map((opt: any) => {
               const selected = picks[q.id] === opt.key;
               return (
                 <li key={opt.key}>

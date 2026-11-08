@@ -24,8 +24,7 @@ function Onboarding() {
   if (done) return <Navigate to="/studio" />;
 
   const first = name.split(" ")[0];
-  const needsJamb = exams.includes("jamb");
-  const steps = needsJamb ? ["Exams", "JAMB subjects", "Exam date", "Ready"] : ["Exams", "Exam date", "Ready"];
+  const steps = ["Exams", "Your four subjects", "Exam date", "Ready"];
   const months = monthOptions();
   const optional = JAMB_OPTIONAL_IDS.map((id) => subjects.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => Boolean(s));
 
@@ -38,13 +37,13 @@ function Onboarding() {
   }
 
   function finish() {
-    complete({ exams, jambSubjects: needsJamb ? picked : [], examMonth: unsure ? null : month });
+    complete({ exams, jambSubjects: picked, examMonth: unsure ? null : month });
     navigate({ to: "/studio" });
   }
 
-  const dateStep = needsJamb ? 2 : 1;
-  const reviewStep = needsJamb ? 3 : 2;
-  const canContinue = step === 0 ? exams.length > 0 : step === 1 && needsJamb ? picked.length === 3 : true;
+  const dateStep = 2;
+  const reviewStep = 3;
+  const canContinue = step === 0 ? exams.length > 0 : step === 1 ? picked.length === 3 : true;
 
   return (
     <div className="min-h-screen bg-paper text-ink">
@@ -61,7 +60,7 @@ function Onboarding() {
         {step === 0 && (
           <>
             <h1 className="font-display text-4xl">What are you preparing for, {first}?</h1>
-            <p className="mt-3 text-muted">Pick WAEC, JAMB, or both. The demo subject bank is open across the catalog.</p>
+            <p className="mt-3 text-muted">Pick WAEC, JAMB, or both. Your four subjects stay with you across Home, Progress, and Take CBT.</p>
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
               {(["waec", "jamb"] as const).map((exam) => (
                 <button key={exam} type="button" onClick={() => toggleExam(exam)} className={`min-h-24 rounded-2xl border p-5 text-left ${exams.includes(exam) ? "border-primary bg-surface ring-2 ring-primary" : "border-line bg-surface"}`}>
@@ -72,13 +71,13 @@ function Onboarding() {
             </div>
           </>
         )}
-        {needsJamb && step === 1 && (
+        {step === 1 && (
           <>
-            <h1 className="font-display text-4xl">Your JAMB combination</h1>
-            <p className="mt-3 text-muted">Use of English is compulsory. Pick three more. The demo notes and quizzes are available across the subject set.</p>
+            <h1 className="font-display text-4xl">Your four subjects</h1>
+            <p className="mt-3 text-muted">Use of English is included. Pick three more. These four are what you will see while you study.</p>
             <div className="mt-6 rounded-2xl border border-primary bg-soft p-4">
               <p className="font-medium">Use of English</p>
-              <p className="text-sm text-muted">Compulsory. Notes are still being prepared.</p>
+              <p className="text-sm text-muted">Always included.</p>
             </div>
             <ul className="mt-3 space-y-2">
               {optional.map((subject) => {
@@ -121,8 +120,7 @@ function Onboarding() {
             <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between gap-4"><dt className="text-muted">Exams</dt><dd className="font-medium">{exams.map((e) => e.toUpperCase()).join(" and ")}</dd></div>
-                {needsJamb && <div className="flex justify-between gap-4"><dt className="text-muted">JAMB subjects</dt><dd className="text-right font-medium">English, {picked.map((id) => subjects.find((s) => s.id === id)?.name ?? id).join(", ")}</dd></div>}
-                <div className="flex justify-between gap-4"><dt className="text-muted">Open now</dt><dd className="font-medium">Physics, Chemistry, Biology, and Mathematics</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-muted">Your subjects</dt><dd className="text-right font-medium">English, {picked.map((id) => subjects.find((s) => s.id === id)?.name ?? id).join(", ")}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-muted">Exam date</dt><dd className="font-medium">{unsure || !month ? "Not set" : monthLabel(month)}</dd></div>
               </dl>
             </div>

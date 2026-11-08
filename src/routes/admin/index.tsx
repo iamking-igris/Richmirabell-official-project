@@ -1,88 +1,100 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
-import { seedPayments, seedRecent, seedStudents, seedWeakTopics } from "@/data/seed-admin";
-import { locateTopic, publishedSubjects, useContent } from "@/lib/content";
-import { naira } from "@/lib/format";
-import { useSession } from "@/lib/session";
+import { BookOpen, ClipboardList, FileUp } from "lucide-react";
+import { useContent } from "@/lib/content";
 
 export const Route = createFileRoute("/admin/")({ component: Overview });
 
 function Overview() {
   const subjects = useContent((s) => s.subjects);
-  const local = useSession((s) => s.payments);
-  const attempts = useSession((s) => s.attempts);
-  const name = useSession((s) => s.name);
-  const subscribed = useSession((s) => s.subscribed);
-  const published = publishedSubjects(subjects).flatMap((s) => s.topics);
-  const payments = useMemo(() => [...local, ...seedPayments()].filter((p) => p.status === "Successful"), [local]);
-  const students = seedStudents.length + (name ? 1 : 0);
-  const trials = seedStudents.filter((x) => x.status === "Trial").length + (name && !subscribed ? 1 : 0);
-  const active = seedStudents.filter((x) => x.activeDaysAgo <= 7).length + (name ? 1 : 0);
-  const weekSets = 146 + attempts.length;
+  const topics = subjects.flatMap((s) => s.topics);
+  const prepared = subjects.filter((s) => s.id === "physics" || s.topics.some((t) => t.status !== "draft" && t.notes.length > 0)).length;
 
-  const recent = [
-    ...attempts.slice(0, 3).map((a) => ({ name, topicId: a.topicId, score: a.score, total: a.total, label: new Date(a.at).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" }) })),
-    ...seedRecent.map((r) => ({ ...r, label: r.minutesAgo < 60 ? `${r.minutesAgo} min ago` : `${Math.round(r.minutesAgo / 60)} h ago` })),
-  ].slice(0, 6);
+  function statusOf(id: string, liveNotes: number) {
+    if (id === "physics" || liveNotes > 0) return "Ready";
+    if (liveNotes === 0 && id !== "physics") return "Being Prepared";
+    return "Not Started";
+  }
 
   return (
     <div>
-      <h1 className="font-display text-4xl">Overview</h1>
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Active students" value={String(active)} />
-        <Stat label="Trials running" value={String(trials)} />
-        <Stat label="Paid this term" value={String(payments.length)} />
-        <Stat label="Revenue" value={naira(payments.reduce((s, p) => s + p.amount, 0))} />
-        <Stat label="Sets sat this week" value={String(weekSets)} />
-      </div>
-      <p className="mt-2 text-sm text-muted">{students} students · {published.length} topics published</p>
+      <header>
+        <h1 className="font-display text-4xl">Dashboard</h1>
+        <p className="mt-2 max-w-xl text-muted">Manage your learning content, prepare subjects, and build practice experiences for students.</p>
+      </header>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-line bg-surface p-5">
-          <h2 className="font-display text-2xl">Weakest topics across students</h2>
-          <ul className="mt-4 space-y-4">
-            {seedWeakTopics.map((w) => {
-              const hit = locateTopic(subjects, w.topicId);
-              if (!hit) return null;
+      <section className="mt-6 overflow-hidden rounded-3xl bg-ink px-6 py-8 text-primary-fg sm:px-8">
+        <p className="text-xs font-semibold tracking-wide text-brass">Welcome back</p>
+        <p className="mt-2 max-w-xl font-display text-2xl sm:text-3xl">Your Richmirabel learning workspace is ready. Continue preparing content and building meaningful practice experiences for students.</p>
+      </section>
+
+      <section className="mt-8">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Stat label="Subjects in the workspace" value={subjects.length} />
+          <Stat label="Topics across subjects" value={topics.length} />
+          <Stat label="Ready for learning" value={prepared} />
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="font-display text-2xl">Quick Actions</h2>
+        <p className="mt-1 text-sm text-muted">Continue working on the most important content tasks.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <Action to="/admin/subjects" icon={<BookOpen className="size-5" aria-hidden />} title="Manage Subjects & Content" text="Organise subjects, topics, subtopics, learning notes, and topic quizzes." />
+          <Action to="/admin/past-questions" icon={<FileUp className="size-5" aria-hidden />} title="Import Past Questions" text="Bring teacher-supplied past-question pages into the question bank for review." />
+          <Action to="/admin/cbt" icon={<ClipboardList className="size-5" aria-hidden />} title="Build a CBT" text="Configure a practice test using available, verified questions." />
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-2xl">Subject Preparation</h2>
+            <p className="mt-1 text-sm text-muted">See which subjects are ready and which are still being prepared.</p>
+          </div>
+          <Link to="/admin/subjects" className="text-sm font-semibold text-primary">View all subjects</Link>
+        </div>
+        {subjects.length === 0 ? (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
+            <p className="font-display text-2xl">No subjects yet.</p>
+            <Link to="/admin/subjects" className="mt-3 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg">Add the first subject</Link>
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+            {subjects.slice(0, 6).map((subject) => {
+              const liveNotes = subject.topics.filter((t) => t.status !== "draft" && t.notes.length > 0).length;
+              const status = statusOf(subject.id, liveNotes);
               return (
-                <li key={w.topicId}>
-                  <div className="flex justify-between gap-3 text-sm">
-                    <span>{hit.topic.title} <span className="text-muted">· {hit.subject.name}</span></span>
-                    <span className="font-semibold">{w.avg}%</span>
+                <li key={subject.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <div>
+                    <p className="font-medium">{subject.name}</p>
+                    <p className="text-sm text-muted">{subject.topics.length} topics · {status}</p>
                   </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-soft"><div className="h-full bg-primary" style={{ width: `${w.avg}%` }} /></div>
+                  <Link to="/admin/topics" search={{ subject: subject.id }} className="text-sm font-semibold text-primary">Open</Link>
                 </li>
               );
             })}
           </ul>
-        </section>
-        <section className="rounded-2xl border border-line bg-surface p-5">
-          <h2 className="font-display text-2xl">Recent attempts</h2>
-          <ul className="mt-4 divide-y divide-line text-sm">
-            {recent.map((r, i) => (
-              <li key={i} className="flex items-center justify-between gap-3 py-3">
-                <span>{r.name} <span className="text-muted">· {locateTopic(subjects, r.topicId)?.topic.title ?? r.topicId}</span></span>
-                <span className="shrink-0"><strong>{r.score}/{r.total}</strong> <span className="text-muted">{r.label}</span></span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Link to="/admin/topics" className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg">Add topic</Link>
-        <Link to="/admin/briefings" className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-sm">Add briefing</Link>
-        <Link to="/admin/payments" className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-sm">View payments</Link>
-      </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
-      <p className="text-sm text-muted">{label}</p>
-      <p className="mt-1 font-display text-2xl sm:text-3xl">{value}</p>
+      <p className="font-display text-3xl">{value}</p>
+      <p className="mt-1 text-sm text-muted">{label}</p>
     </div>
+  );
+}
+
+function Action({ to, icon, title, text }: { to: "/admin/subjects" | "/admin/past-questions" | "/admin/cbt"; icon: React.ReactNode; title: string; text: string }) {
+  return (
+    <Link to={to} className="flex h-full flex-col rounded-2xl border border-line bg-surface p-5">
+      <span className="text-primary">{icon}</span>
+      <p className="mt-3 font-display text-xl">{title}</p>
+      <p className="mt-1 text-sm text-muted">{text}</p>
+    </Link>
   );
 }

@@ -19,10 +19,21 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminAiRouteImport } from './routes/admin/ai'
+import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
+import { Route as AdminAuditRouteImport } from './routes/admin/audit'
 import { Route as AdminBriefingsRouteImport } from './routes/admin/briefings'
+import { Route as AdminCbtRouteImport } from './routes/admin/cbt'
+import { Route as AdminImporterRouteImport } from './routes/admin/importer'
+import { Route as AdminNotesRouteImport } from './routes/admin/notes'
+import { Route as AdminPastQuestionsRouteImport } from './routes/admin/past-questions'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
+import { Route as AdminQuestionsRouteImport } from './routes/admin/questions'
+import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminStudentsRouteImport } from './routes/admin/students'
 import { Route as AdminSubjectsRouteImport } from './routes/admin/subjects'
+import { Route as AdminSubscriptionsRouteImport } from './routes/admin/subscriptions'
+import { Route as AdminSupportRouteImport } from './routes/admin/support'
 import { Route as AdminToolsRouteImport } from './routes/admin/tools'
 import { Route as AdminTopicsRouteImport } from './routes/admin/topics'
 import { Route as StudioIndexRouteImport } from './routes/studio/index'
@@ -30,12 +41,17 @@ import { Route as StudioAccountRouteImport } from './routes/studio/account'
 import { Route as StudioCbtRouteImport } from './routes/studio/cbt'
 import { Route as StudioGuidesRouteImport } from './routes/studio/guides'
 import { Route as StudioNewsRouteImport } from './routes/studio/news'
+import { Route as StudioPastQuestionsRouteImport } from './routes/studio/past-questions'
 import { Route as StudioPlanRouteImport } from './routes/studio/plan'
 import { Route as StudioProfileRouteImport } from './routes/studio/profile'
 import { Route as StudioProgressRouteImport } from './routes/studio/progress'
 import { Route as StudioSubjectsRouteImport } from './routes/studio/subjects'
+import { Route as StudioHelpRouteImport } from './routes/studio/help'
+import { Route as StudioSecurityRouteImport } from './routes/studio/security'
 import { Route as AdminTopicsIdRouteImport } from './routes/admin/topics.$id'
+import { Route as AdminSettingsCategoryRouteImport } from './routes/admin/settings.$category'
 import { Route as StudioCbtJambRouteImport } from './routes/studio/cbt.jamb'
+import { Route as StudioCbtWeeklyExamIdRouteImport } from './routes/studio/cbt.weekly.$examId'
 import { Route as StudioPracticeIdRouteImport } from './routes/studio/practice.$id'
 import { Route as StudioReviewAttemptIdRouteImport } from './routes/studio/review.$attemptId'
 import { Route as StudioSubjectIdRouteImport } from './routes/studio/subject.$id'
@@ -92,14 +108,59 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAiRoute = AdminAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAuditRoute = AdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminBriefingsRoute = AdminBriefingsRouteImport.update({
   id: '/briefings',
   path: '/briefings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCbtRoute = AdminCbtRouteImport.update({
+  id: '/cbt',
+  path: '/cbt',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminImporterRoute = AdminImporterRouteImport.update({
+  id: '/importer',
+  path: '/importer',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminNotesRoute = AdminNotesRouteImport.update({
+  id: '/notes',
+  path: '/notes',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPastQuestionsRoute = AdminPastQuestionsRouteImport.update({
+  id: '/past-questions',
+  path: '/past-questions',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminQuestionsRoute = AdminQuestionsRouteImport.update({
+  id: '/questions',
+  path: '/questions',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminStudentsRoute = AdminStudentsRouteImport.update({
@@ -110,6 +171,16 @@ const AdminStudentsRoute = AdminStudentsRouteImport.update({
 const AdminSubjectsRoute = AdminSubjectsRouteImport.update({
   id: '/subjects',
   path: '/subjects',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
+  id: '/subscriptions',
+  path: '/subscriptions',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSupportRoute = AdminSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminToolsRoute = AdminToolsRouteImport.update({
@@ -147,6 +218,11 @@ const StudioNewsRoute = StudioNewsRouteImport.update({
   path: '/news',
   getParentRoute: () => StudioRoute,
 } as any)
+const StudioPastQuestionsRoute = StudioPastQuestionsRouteImport.update({
+  id: '/past-questions',
+  path: '/past-questions',
+  getParentRoute: () => StudioRoute,
+} as any)
 const StudioPlanRoute = StudioPlanRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -167,14 +243,34 @@ const StudioSubjectsRoute = StudioSubjectsRouteImport.update({
   path: '/subjects',
   getParentRoute: () => StudioRoute,
 } as any)
+const StudioHelpRoute = StudioHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => StudioRoute,
+} as any)
+const StudioSecurityRoute = StudioSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => StudioRoute,
+} as any)
 const AdminTopicsIdRoute = AdminTopicsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AdminTopicsRoute,
 } as any)
+const AdminSettingsCategoryRoute = AdminSettingsCategoryRouteImport.update({
+  id: '/$category',
+  path: '/$category',
+  getParentRoute: () => AdminSettingsRoute,
+} as any)
 const StudioCbtJambRoute = StudioCbtJambRouteImport.update({
   id: '/jamb',
   path: '/jamb',
+  getParentRoute: () => StudioCbtRoute,
+} as any)
+const StudioCbtWeeklyExamIdRoute = StudioCbtWeeklyExamIdRouteImport.update({
+  id: '/weekly/$examId',
+  path: '/weekly/$examId',
   getParentRoute: () => StudioCbtRoute,
 } as any)
 const StudioPracticeIdRoute = StudioPracticeIdRouteImport.update({
@@ -213,24 +309,40 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
   '/studio': typeof StudioRouteWithChildren
+  '/admin/ai': typeof AdminAiRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
+  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/importer': typeof AdminImporterRoute
+  '/admin/notes': typeof AdminNotesRoute
+  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/admin/students': typeof AdminStudentsRoute
   '/admin/subjects': typeof AdminSubjectsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/tools': typeof AdminToolsRoute
   '/admin/topics': typeof AdminTopicsRouteWithChildren
   '/studio/account': typeof StudioAccountRoute
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
+  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
   '/studio/subjects': typeof StudioSubjectsRoute
+  '/studio/help': typeof StudioHelpRoute
+  '/studio/security': typeof StudioSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/studio/': typeof StudioIndexRoute
   '/admin/topics/$id': typeof AdminTopicsIdRoute
+  '/admin/settings/$category': typeof AdminSettingsCategoryRoute
   '/studio/cbt/jamb': typeof StudioCbtJambRoute
+  '/studio/cbt/weekly/$examId': typeof StudioCbtWeeklyExamIdRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
   '/studio/subject/$id': typeof StudioSubjectIdRoute
@@ -245,23 +357,38 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
+  '/admin/ai': typeof AdminAiRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
+  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/importer': typeof AdminImporterRoute
+  '/admin/notes': typeof AdminNotesRoute
+  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/admin/students': typeof AdminStudentsRoute
   '/admin/subjects': typeof AdminSubjectsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/tools': typeof AdminToolsRoute
   '/admin/topics': typeof AdminTopicsRouteWithChildren
   '/studio/account': typeof StudioAccountRoute
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
+  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
   '/studio/subjects': typeof StudioSubjectsRoute
+  '/studio/help': typeof StudioHelpRoute
+  '/studio/security': typeof StudioSecurityRoute
   '/admin': typeof AdminIndexRoute
   '/studio': typeof StudioIndexRoute
   '/admin/topics/$id': typeof AdminTopicsIdRoute
+  '/admin/settings/$category': typeof AdminSettingsCategoryRoute
   '/studio/cbt/jamb': typeof StudioCbtJambRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
@@ -280,23 +407,38 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
   '/studio': typeof StudioRouteWithChildren
+  '/admin/ai': typeof AdminAiRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
+  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/importer': typeof AdminImporterRoute
+  '/admin/notes': typeof AdminNotesRoute
+  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/settings': typeof AdminSettingsRoute
   '/admin/students': typeof AdminStudentsRoute
   '/admin/subjects': typeof AdminSubjectsRoute
+  '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/admin/support': typeof AdminSupportRoute
   '/admin/tools': typeof AdminToolsRoute
   '/admin/topics': typeof AdminTopicsRouteWithChildren
   '/studio/account': typeof StudioAccountRoute
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
+  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
   '/studio/subjects': typeof StudioSubjectsRoute
+  '/studio/help': typeof StudioHelpRoute
+  '/studio/security': typeof StudioSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/studio/': typeof StudioIndexRoute
   '/admin/topics/$id': typeof AdminTopicsIdRoute
+  '/admin/settings/$category': typeof AdminSettingsCategoryRoute
   '/studio/cbt/jamb': typeof StudioCbtJambRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
@@ -316,16 +458,28 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/signup'
     | '/studio'
+    | '/admin/ai'
+    | '/admin/analytics'
+    | '/admin/audit'
     | '/admin/briefings'
+    | '/admin/cbt'
+    | '/admin/importer'
+    | '/admin/notes'
+    | '/admin/past-questions'
     | '/admin/payments'
+    | '/admin/questions'
+    | '/admin/settings'
     | '/admin/students'
     | '/admin/subjects'
+    | '/admin/subscriptions'
+    | '/admin/support'
     | '/admin/tools'
     | '/admin/topics'
     | '/studio/account'
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
+    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -348,16 +502,28 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/signup'
+    | '/admin/ai'
+    | '/admin/analytics'
+    | '/admin/audit'
     | '/admin/briefings'
+    | '/admin/cbt'
+    | '/admin/importer'
+    | '/admin/notes'
+    | '/admin/past-questions'
     | '/admin/payments'
+    | '/admin/questions'
+    | '/admin/settings'
     | '/admin/students'
     | '/admin/subjects'
+    | '/admin/subscriptions'
+    | '/admin/support'
     | '/admin/tools'
     | '/admin/topics'
     | '/studio/account'
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
+    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -371,6 +537,7 @@ export interface FileRouteTypes {
     | '/studio/subject/$id'
     | '/studio/topic/$id'
     | '/studio/cbt/waec/$paperId'
+    | '/studio/cbt/weekly/$examId'
   id:
     | '__root__'
     | '/'
@@ -382,16 +549,28 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/signup'
     | '/studio'
+    | '/admin/ai'
+    | '/admin/analytics'
+    | '/admin/audit'
     | '/admin/briefings'
+    | '/admin/cbt'
+    | '/admin/importer'
+    | '/admin/notes'
+    | '/admin/past-questions'
     | '/admin/payments'
+    | '/admin/questions'
+    | '/admin/settings'
     | '/admin/students'
     | '/admin/subjects'
+    | '/admin/subscriptions'
+    | '/admin/support'
     | '/admin/tools'
     | '/admin/topics'
     | '/studio/account'
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
+    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -405,6 +584,7 @@ export interface FileRouteTypes {
     | '/studio/subject/$id'
     | '/studio/topic/$id'
     | '/studio/cbt/waec/$paperId'
+    | '/studio/cbt/weekly/$examId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -491,6 +671,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/ai': {
+      id: '/admin/ai'
+      path: '/ai'
+      fullPath: '/admin/ai'
+      preLoaderRoute: typeof AdminAiRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/analytics': {
+      id: '/admin/analytics'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/audit': {
+      id: '/admin/audit'
+      path: '/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof AdminAuditRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/briefings': {
       id: '/admin/briefings'
       path: '/briefings'
@@ -498,11 +699,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBriefingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/cbt': {
+      id: '/admin/cbt'
+      path: '/cbt'
+      fullPath: '/admin/cbt'
+      preLoaderRoute: typeof AdminCbtRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/importer': {
+      id: '/admin/importer'
+      path: '/importer'
+      fullPath: '/admin/importer'
+      preLoaderRoute: typeof AdminImporterRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/notes': {
+      id: '/admin/notes'
+      path: '/notes'
+      fullPath: '/admin/notes'
+      preLoaderRoute: typeof AdminNotesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/past-questions': {
+      id: '/admin/past-questions'
+      path: '/past-questions'
+      fullPath: '/admin/past-questions'
+      preLoaderRoute: typeof AdminPastQuestionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/payments': {
       id: '/admin/payments'
       path: '/payments'
       fullPath: '/admin/payments'
       preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/questions': {
+      id: '/admin/questions'
+      path: '/questions'
+      fullPath: '/admin/questions'
+      preLoaderRoute: typeof AdminQuestionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/students': {
@@ -517,6 +760,20 @@ declare module '@tanstack/react-router' {
       path: '/subjects'
       fullPath: '/admin/subjects'
       preLoaderRoute: typeof AdminSubjectsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/subscriptions': {
+      id: '/admin/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/admin/subscriptions'
+      preLoaderRoute: typeof AdminSubscriptionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/support': {
+      id: '/admin/support'
+      path: '/support'
+      fullPath: '/admin/support'
+      preLoaderRoute: typeof AdminSupportRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/tools': {
@@ -568,6 +825,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioNewsRouteImport
       parentRoute: typeof StudioRoute
     }
+    '/studio/past-questions': {
+      id: '/studio/past-questions'
+      path: '/past-questions'
+      fullPath: '/studio/past-questions'
+      preLoaderRoute: typeof StudioPastQuestionsRouteImport
+      parentRoute: typeof StudioRoute
+    }
     '/studio/plan': {
       id: '/studio/plan'
       path: '/plan'
@@ -596,6 +860,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioSubjectsRouteImport
       parentRoute: typeof StudioRoute
     }
+    '/studio/help': {
+      id: '/studio/help'
+      path: '/help'
+      fullPath: '/studio/help'
+      preLoaderRoute: typeof StudioHelpRouteImport
+      parentRoute: typeof StudioRoute
+    }
+    '/studio/security': {
+      id: '/studio/security'
+      path: '/security'
+      fullPath: '/studio/security'
+      preLoaderRoute: typeof StudioSecurityRouteImport
+      parentRoute: typeof StudioRoute
+    }
     '/admin/topics/$id': {
       id: '/admin/topics/$id'
       path: '/$id'
@@ -603,11 +881,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTopicsIdRouteImport
       parentRoute: typeof AdminTopicsRoute
     }
+    '/admin/settings/$category': {
+      id: '/admin/settings/$category'
+      path: '/$category'
+      fullPath: '/admin/settings/$category'
+      preLoaderRoute: typeof AdminSettingsCategoryRouteImport
+      parentRoute: typeof AdminSettingsRoute
+    }
     '/studio/cbt/jamb': {
       id: '/studio/cbt/jamb'
       path: '/jamb'
       fullPath: '/studio/cbt/jamb'
       preLoaderRoute: typeof StudioCbtJambRouteImport
+      parentRoute: typeof StudioCbtRoute
+    }
+    '/studio/cbt/weekly/$examId': {
+      id: '/studio/cbt/weekly/$examId'
+      path: '/weekly/$examId'
+      fullPath: '/studio/cbt/weekly/$examId'
+      preLoaderRoute: typeof StudioCbtWeeklyExamIdRouteImport
       parentRoute: typeof StudioCbtRoute
     }
     '/studio/practice/$id': {
@@ -660,21 +952,55 @@ const AdminTopicsRouteWithChildren = AdminTopicsRoute._addFileChildren(
   AdminTopicsRouteChildren,
 )
 
+interface AdminSettingsRouteChildren {
+  AdminSettingsCategoryRoute: typeof AdminSettingsCategoryRoute
+}
+
+const AdminSettingsRouteChildren: AdminSettingsRouteChildren = {
+  AdminSettingsCategoryRoute: AdminSettingsCategoryRoute,
+}
+
+const AdminSettingsRouteWithChildren = AdminSettingsRoute._addFileChildren(
+  AdminSettingsRouteChildren,
+)
+
 interface AdminRouteChildren {
+  AdminAiRoute: typeof AdminAiRoute
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  AdminAuditRoute: typeof AdminAuditRoute
   AdminBriefingsRoute: typeof AdminBriefingsRoute
+  AdminCbtRoute: typeof AdminCbtRoute
+  AdminImporterRoute: typeof AdminImporterRoute
+  AdminNotesRoute: typeof AdminNotesRoute
+  AdminPastQuestionsRoute: typeof AdminPastQuestionsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminQuestionsRoute: typeof AdminQuestionsRoute
+  AdminSettingsRoute: typeof AdminSettingsRouteWithChildren
   AdminStudentsRoute: typeof AdminStudentsRoute
   AdminSubjectsRoute: typeof AdminSubjectsRoute
+  AdminSubscriptionsRoute: typeof AdminSubscriptionsRoute
+  AdminSupportRoute: typeof AdminSupportRoute
   AdminToolsRoute: typeof AdminToolsRoute
   AdminTopicsRoute: typeof AdminTopicsRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAiRoute: AdminAiRoute,
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
+  AdminAuditRoute: AdminAuditRoute,
   AdminBriefingsRoute: AdminBriefingsRoute,
+  AdminCbtRoute: AdminCbtRoute,
+  AdminImporterRoute: AdminImporterRoute,
+  AdminNotesRoute: AdminNotesRoute,
+  AdminPastQuestionsRoute: AdminPastQuestionsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminQuestionsRoute: AdminQuestionsRoute,
+  AdminSettingsRoute: AdminSettingsRouteWithChildren,
   AdminStudentsRoute: AdminStudentsRoute,
   AdminSubjectsRoute: AdminSubjectsRoute,
+  AdminSubscriptionsRoute: AdminSubscriptionsRoute,
+  AdminSupportRoute: AdminSupportRoute,
   AdminToolsRoute: AdminToolsRoute,
   AdminTopicsRoute: AdminTopicsRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
@@ -684,11 +1010,13 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface StudioCbtRouteChildren {
   StudioCbtJambRoute: typeof StudioCbtJambRoute
+  StudioCbtWeeklyExamIdRoute: typeof StudioCbtWeeklyExamIdRoute
   StudioCbtWaecPaperIdRoute: typeof StudioCbtWaecPaperIdRoute
 }
 
 const StudioCbtRouteChildren: StudioCbtRouteChildren = {
   StudioCbtJambRoute: StudioCbtJambRoute,
+  StudioCbtWeeklyExamIdRoute: StudioCbtWeeklyExamIdRoute,
   StudioCbtWaecPaperIdRoute: StudioCbtWaecPaperIdRoute,
 }
 
@@ -701,10 +1029,13 @@ interface StudioRouteChildren {
   StudioCbtRoute: typeof StudioCbtRouteWithChildren
   StudioGuidesRoute: typeof StudioGuidesRoute
   StudioNewsRoute: typeof StudioNewsRoute
+  StudioPastQuestionsRoute: typeof StudioPastQuestionsRoute
   StudioPlanRoute: typeof StudioPlanRoute
   StudioProfileRoute: typeof StudioProfileRoute
   StudioProgressRoute: typeof StudioProgressRoute
   StudioSubjectsRoute: typeof StudioSubjectsRoute
+  StudioHelpRoute: typeof StudioHelpRoute
+  StudioSecurityRoute: typeof StudioSecurityRoute
   StudioIndexRoute: typeof StudioIndexRoute
   StudioPracticeIdRoute: typeof StudioPracticeIdRoute
   StudioReviewAttemptIdRoute: typeof StudioReviewAttemptIdRoute
@@ -717,10 +1048,13 @@ const StudioRouteChildren: StudioRouteChildren = {
   StudioCbtRoute: StudioCbtRouteWithChildren,
   StudioGuidesRoute: StudioGuidesRoute,
   StudioNewsRoute: StudioNewsRoute,
+  StudioPastQuestionsRoute: StudioPastQuestionsRoute,
   StudioPlanRoute: StudioPlanRoute,
   StudioProfileRoute: StudioProfileRoute,
   StudioProgressRoute: StudioProgressRoute,
   StudioSubjectsRoute: StudioSubjectsRoute,
+  StudioHelpRoute: StudioHelpRoute,
+  StudioSecurityRoute: StudioSecurityRoute,
   StudioIndexRoute: StudioIndexRoute,
   StudioPracticeIdRoute: StudioPracticeIdRoute,
   StudioReviewAttemptIdRoute: StudioReviewAttemptIdRoute,
@@ -745,12 +1079,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

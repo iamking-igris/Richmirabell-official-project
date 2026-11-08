@@ -13,6 +13,7 @@ export type Attempt = {
   id: string; topicId: string; title: string; score: number; total: number; at: number;
   kind: AttemptKind; demo?: boolean; picks?: Record<string, Choice>; written?: Record<string, string>;
   items?: AttemptItemSnapshot[]; paperId?: string; subjectLabel?: string;
+  utmeScore?: number; exactUtmeScore?: number; subjectScores?: Record<string, any>;
 };
 export type Exam = "jamb" | "waec";
 export type Pathway = "sciences" | "arts" | "commercial";
@@ -38,18 +39,18 @@ export const useSession = create<Session>()(
   persist(
     (set, get) => ({
       name: "", email: "", trialStart: null, subscribed: false, attempts: [], payments: [],
-      exams: [], pathway: "sciences", selectedSubjects: ["physics"], jambSubjects: [], examMonth: null,
-      onboardingComplete: false, demoMode: true,
-      enter: (name, email = "") => set({ name: name.trim(), email: email.trim() }),
+      exams: ["jamb"], pathway: "sciences", selectedSubjects: ["english", "physics", "chemistry", "biology"], jambSubjects: ["physics", "chemistry", "biology"], examMonth: null,
+      onboardingComplete: false, demoMode: false,
+      enter: (name, email = "") => set({ name: name.trim(), email: email.trim(), onboardingComplete: true, trialStart: Date.now() }),
       completeOnboarding: ({ exams, jambSubjects, examMonth }) => set((s) => ({
         exams, pathway: "sciences",
-        selectedSubjects: exams.includes("jamb") ? ["english", ...jambSubjects] : ["physics"],
-        jambSubjects: exams.includes("jamb") ? jambSubjects : [], examMonth, onboardingComplete: true,
+        selectedSubjects: ["english", ...jambSubjects].slice(0, 4),
+        jambSubjects, examMonth, onboardingComplete: true,
         trialStart: s.trialStart ?? Date.now(),
       })),
       updateProfile: ({ exams, jambSubjects, examMonth }) => set({
-        exams, selectedSubjects: exams.includes("jamb") ? ["english", ...jambSubjects] : ["physics"],
-        jambSubjects: exams.includes("jamb") ? jambSubjects : [], examMonth,
+        exams, selectedSubjects: ["english", ...jambSubjects].slice(0, 4),
+        jambSubjects, examMonth,
       }),
       subscribe: () => set({ subscribed: true }),
       resetTrial: () => set({ trialStart: Date.now() - TWO_DAYS - 1000, subscribed: false }),
@@ -67,15 +68,23 @@ export const useSession = create<Session>()(
       clearAllAttempts: () => set({ attempts: [] }),
     }),
     {
-      name: "richmirabel-session", version: 5,
+      name: "richmirabel-session", version: 6,
       migrate: (state) => {
-        const s = state as Partial<Session> & { attempts?: Array<Partial<Attempt> & { topicId: string; score: number; total: number; at: number }> };
+        const s = (state ?? {}) as Partial<Session> & { attempts?: Array<Partial<Attempt> & { topicId: string; score: number; total: number; at: number }> };
+        const isLegacyCandidate = s.email === "student@gmail.com" || s.name === "Student Candidate";
         const attempts = (s.attempts ?? []).map((a) => ({
           id: a.id ?? `legacy_${a.topicId}_${a.at}`, topicId: a.topicId, title: a.title ?? a.topicId,
           score: a.score, total: a.total, at: a.at, kind: (a.kind as AttemptKind) ?? "topic",
           demo: a.demo, picks: a.picks, written: a.written, items: a.items, paperId: a.paperId, subjectLabel: a.subjectLabel,
         }));
-        return { ...s, exams: s.exams ?? [], jambSubjects: s.jambSubjects ?? [], pathway: "sciences" as const, demoMode: s.demoMode ?? true, attempts };
+        if (isLegacyCandidate) {
+          return {
+            name: "", email: "", trialStart: null, subscribed: false, attempts: [], payments: [],
+            exams: ["jamb"], pathway: "sciences" as const, selectedSubjects: ["english", "physics", "chemistry", "biology"], jambSubjects: ["physics", "chemistry", "biology"], examMonth: null,
+            onboardingComplete: false, demoMode: false,
+          };
+        }
+        return { ...s, exams: s.exams ?? [], jambSubjects: s.jambSubjects ?? [], pathway: "sciences" as const, demoMode: false, attempts };
       },
     },
   ),

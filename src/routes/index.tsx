@@ -112,7 +112,7 @@ function Landing() {
             <Link to="/login" className="hidden text-sm text-muted hover:text-ink sm:inline">
               Sign in
             </Link>
-            <button type="button" onClick={start} className="inline-flex min-h-11 items-center bg-primary px-4 text-sm font-semibold text-primary-fg">
+            <button type="button" onClick={start} className="hidden min-h-11 items-center bg-primary px-4 text-sm font-semibold text-primary-fg sm:inline-flex">
               {name ? "Continue learning" : "Start free trial"}
             </button>
             <button
@@ -128,12 +128,22 @@ function Landing() {
           </div>
         </div>
         {menu && (
-          <nav id="home-menu" className="menu-drop max-h-[70vh] overflow-auto border-t border-line bg-paper px-4 py-2 lg:hidden" aria-label="Page">
+          <nav id="home-menu" className="menu-drop max-h-[70vh] overflow-auto border-t border-line bg-paper px-4 py-3 space-y-2 lg:hidden" aria-label="Page">
             {links.map(([label, href]) => (
-              <a key={href} href={href} className="flex min-h-11 items-center text-sm" onClick={() => setMenu(false)}>
+              <a key={href} href={href} className="flex min-h-11 items-center text-sm font-medium" onClick={() => setMenu(false)}>
                 {label}
               </a>
             ))}
+            <div className="pt-2 border-t border-line flex flex-col gap-2">
+              <button type="button" onClick={() => { setMenu(false); start(); }} className="w-full inline-flex min-h-11 items-center justify-center bg-primary px-4 text-sm font-semibold text-primary-fg">
+                {name ? "Continue learning" : "Start free trial"}
+              </button>
+              {!name && (
+                <Link to="/login" className="w-full inline-flex min-h-11 items-center justify-center text-sm font-medium text-muted hover:text-ink" onClick={() => setMenu(false)}>
+                  Sign in
+                </Link>
+              )}
+            </div>
           </nav>
         )}
       </header>

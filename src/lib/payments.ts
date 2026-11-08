@@ -6,7 +6,7 @@ export type PaymentRecord = {
   amount: number;
   method: "Card" | "Bank transfer" | "USSD";
   at: number;
-  status: "Successful" | "Failed";
+  status: "Successful" | "Failed" | "Pending";
 };
 
 export interface PaymentProvider {
@@ -22,4 +22,5 @@ export const localProvider: PaymentProvider = {
 
 export const provider: PaymentProvider = localProvider;
 
-export const TERM_PRICE = 4500;
+export const MONTHLY_PRICE = 4500;
+export const TERM_PRICE = MONTHLY_PRICE; // Backwards-compatibility alias

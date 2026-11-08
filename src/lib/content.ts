@@ -7,10 +7,11 @@ type Content = {
   subjects: Subject[]; news: typeof seedNews; guides: typeof seedGuides;
   upsertSubject: (subject: Subject) => void; upsertTopic: (subjectId: string, topic: Topic) => void;
   removeTopic: (subjectId: string, topicId: string) => void;
+  removeMainTopic: (subjectId: string, mainTopicName: string) => void;
   upsertNews: (item: (typeof seedNews)[number]) => void; removeNews: (id: string) => void; resetContent: () => void;
 };
 function seedWithDemo(): Subject[] {
-  return seedSubjects.map((s) => s.id !== "physics" ? s : { ...s, topics: withDemoPhysicsTopics(s.topics) });
+  return seedSubjects;
 }
 export const useContent = create<Content>()(
   persist(
@@ -23,6 +24,11 @@ export const useContent = create<Content>()(
         return { ...subject, topics: exists ? subject.topics.map(t => t.id === topic.id ? topic : t) : [...subject.topics, topic] };
       })})),
       removeTopic: (subjectId, topicId) => set((s) => ({ subjects: s.subjects.map(subject => subject.id === subjectId ? { ...subject, topics: subject.topics.filter(t => t.id !== topicId) } : subject) })),
+      removeMainTopic: (subjectId, mainTopicName) => set((s) => ({ subjects: s.subjects.map(subject => {
+        if (subject.id !== subjectId) return subject;
+        const target = mainTopicName.trim().toLowerCase();
+        return { ...subject, topics: subject.topics.filter(t => (t.mainTopic ?? "Topics").trim().toLowerCase() !== target) };
+      }) })),
       upsertNews: (item) => set((s) => ({ news: s.news.some(x => x.id === item.id) ? s.news.map(x => x.id === item.id ? item : x) : [item, ...s.news] })),
       removeNews: (id) => set((s) => ({ news: s.news.filter(item => item.id !== id) })),
       resetContent: () => set({ subjects: seedWithDemo(), news: seedNews, guides: seedGuides }),
@@ -31,28 +37,25 @@ export const useContent = create<Content>()(
       name: "richmirabel-content", version: 3,
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<Content>;
-        const savedSubjects = saved.subjects ?? [];
-        const subjects = seedSubjects.map((seed) => {
-          const mine = savedSubjects.find(s => s.id === seed.id);
-          if (!mine) return seed.id === "physics" ? { ...seed, topics: withDemoPhysicsTopics(seed.topics) } : seed;
-          const baseTopics = seed.id === "physics" ? withDemoPhysicsTopics(seed.topics) : seed.topics;
-          const missing = baseTopics.filter(t => !mine.topics.some(x => x.id === t.id));
-          const mergedTopics = mine.topics.map(mt => {
-            const fromSeed = baseTopics.find(t => t.id === mt.id);
-            if (fromSeed && fromSeed.origin === "shipped") return { ...fromSeed, ...mt, origin: "shipped" as const, notes: fromSeed.notes, questions: fromSeed.questions, theory: fromSeed.theory, objectives: fromSeed.objectives };
-            if (fromSeed && fromSeed.origin === "demo" && mt.origin !== "shipped") return fromSeed;
-            return mt;
-          });
-          return { ...mine, group: seed.group, photo: seed.photo, topics: [...mergedTopics, ...missing] };
-        });
-        const extra = savedSubjects.filter(s => !seedSubjects.some(x => x.id === s.id));
-        return { ...current, ...saved, subjects: [...subjects, ...extra] };
+        const savedSubjects = saved.subjects;
+        if (!savedSubjects || !Array.isArray(savedSubjects) || savedSubjects.length === 0) {
+          return { ...current, ...saved, subjects: seedWithDemo() };
+        }
+        const existingIds = new Set(savedSubjects.map((s) => s.id));
+        const missingSeedSubjects = seedSubjects.filter((s) => !existingIds.has(s.id));
+        return {
+          ...current,
+          ...saved,
+          subjects: missingSeedSubjects.length > 0 ? [...savedSubjects, ...missingSeedSubjects] : savedSubjects,
+        };
       },
     },
   ),
 );
 export function publishedSubjects(subjects: Subject[]) {
-  return subjects.map(subject => ({ ...subject, topics: subject.topics.filter(topic => topic.status !== "draft") }));
+  return subjects
+    .filter((subject) => subject.available !== false)
+    .map((subject) => ({ ...subject, topics: subject.topics.filter((topic) => topic.status !== "draft") }));
 }
 export const AVAILABLE_SUBJECT_IDS = new Set(["physics", "chemistry", "biology", "mathematics"]);
 export function availableSubjects(subjects: Subject[]) {
@@ -76,7 +79,6 @@ export function groupByMainTopic(topics: Topic[]) {
   }
   return [...map.entries()].map(([main, items]) => ({ main, items }));
 }
-export function visibleTopics(topics: Topic[], demoMode: boolean) {
-  if (demoMode) return topics;
+export function visibleTopics(topics: Topic[], _demoMode = false) {
   return topics.filter(t => t.origin !== "demo");
 }

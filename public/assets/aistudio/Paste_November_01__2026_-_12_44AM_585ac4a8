@@ -1,0 +1,876 @@
+# RICHMIRABEL — COMPLETE CBT SYSTEM MASTER PROMPT
+## Admin Question Generation + Verified Sources + Weekly CBTs + Full JAMB Simulation + Student Exam Experience + Results + Progress
+
+You are working inside the **existing Richmirabel JAMB/WAEC preparation platform**. Your task is to complete and integrate its CBT system into one coherent, polished, reliable experience for both administrators and students.
+
+This is an **incremental enhancement of an existing project, NOT a rebuild, redesign of the entire platform, or permission to modify unrelated features.**
+
+The existing codebase, design system, routes, components, Gemini integration, working Note Studio OCR pipeline, navigation, and other features are the source of truth.
+
+---
+
+# 1. THE MOST IMPORTANT RULE: CHANGE NOTHING ELSE
+
+Before writing code, inspect the existing project and understand its architecture, components, styles, routes, data models, state management, Gemini integration, and working functionality.
+
+Identify what already exists and what is incomplete. Build on the current implementation instead of replacing it.
+
+## Strict preservation rules
+
+- Do not rebuild the application from scratch.
+- Do not redesign the whole Richmirabel platform.
+- Do not modify unrelated pages, navigation, features, layouts, branding, or workflows.
+- Do not rename, remove, or restructure unrelated routes, components, or data models.
+- Do not replace working components with generic alternatives.
+- Do not remove existing functionality simply because a different implementation seems easier.
+- Do not replace the existing Gemini integration with a new, competing integration.
+- Do not break Note Studio, lesson-note OCR, topic-quiz OCR, Past Papers, authentication, account pages, payment interfaces, student onboarding, or other working features.
+- Do not overwrite existing user content or discard existing records.
+- Do not introduce fake functionality, decorative controls that do nothing, placeholder analytics presented as real, or invented past-question provenance.
+- Do not use this task as an opportunity to perform unrelated cleanup or refactoring.
+
+**If a change is not necessary to deliver the CBT functionality described in this prompt, do not make it.**
+
+When existing functionality can be reused, reuse it. When a component needs improvement, make the smallest safe change that achieves the requirement.
+
+Before editing, inspect the current files and determine which changes are actually necessary. Preserve all existing working behavior.
+
+After implementation, report precisely what changed and what did not change. Never claim that something was tested successfully unless you actually ran the relevant test.
+
+---
+
+# 2. PRODUCT VISION
+
+Richmirabel should provide two connected CBT experiences:
+
+1. **Weekly CBT Practice:** Regular, teacher-reviewed examinations prepared and scheduled by the administrator.
+2. **Full JAMB CBT Simulation:** A separate, comprehensive UTME-style examination that closely follows the applicable JAMB structure.
+
+These must not be two disconnected demos. They must use a coherent question bank, exam configuration, approval workflow, attempt records, grading system, review experience, and student progress data.
+
+The overall flow must work end to end:
+
+**Question sourcing → generation or upload → extraction and categorization → administrator review → approval → exam preparation → scheduling → student availability → examination attempt → deterministic grading → results → AI-assisted performance analysis → Progress.**
+
+Every stage must connect to the next stage using the existing application architecture.
+
+Do not create a second question bank or an unrelated exam system when the existing CBT Generator and question data can be extended.
+
+---
+
+# 3. UI AND DESIGN QUALITY — NON-NEGOTIABLE
+
+The Richmirabel interface must remain distinctive, clean, spacious, and consistent with its existing identity.
+
+Do not create a generic SaaS dashboard. Do not make the interface cramped, crowded, overly card-heavy, or visually noisy.
+
+## Visual direction
+
+- Preserve the existing Richmirabel brand, typography, colors, navigation, and established component styles.
+- Use clear visual hierarchy, comfortable spacing, readable typography, and consistent alignment.
+- Keep forms organized into understandable sections.
+- Use whitespace intentionally. Do not squeeze every field, statistic, action, and panel into one viewport.
+- Prefer a small number of well-organized sections over many tiny cards.
+- Use responsive layouts that work on desktop, tablet, and mobile.
+- Keep the student examination interface focused, distraction-free, and easy to navigate.
+- Keep the administrator interface efficient for reviewing large question collections without overwhelming the screen.
+- Use clear labels, informative empty states, and helpful validation messages.
+- Maintain visible loading, success, and error states using existing project conventions.
+- Preserve keyboard accessibility and clear focus indicators.
+
+Use the existing loading animation and progress components from Note Studio or the existing OCR workflows wherever appropriate. Reuse their actual components and behavior, not merely a similar-looking animation.
+
+**Do not redesign the entire admin panel or student dashboard to accommodate CBT. Only improve the relevant CBT surfaces where necessary.**
+
+---
+
+# 4. ADMIN CBT GENERATOR — EXISTING WORKFLOW
+
+Use the existing CBT Generator route and interface. Preserve its established tabs and workflow:
+
+- Details
+- Sources
+- Settings
+- Review
+- Save
+
+Do not create a competing exam builder or a second CBT Generator page.
+
+The existing CBT Generator is distinct from Past Questions management. Keep their responsibilities clear while allowing both to use the same underlying question records where appropriate.
+
+## Details
+
+Allow the administrator to configure:
+
+- Examination title.
+- Examination type: Weekly CBT or Full JAMB Simulation.
+- Subject or subject combination.
+- Applicable topics or subtopics.
+- Number of questions.
+- Duration.
+- Difficulty distribution where supported.
+- Examination instructions.
+- Opening and closing schedule for scheduled examinations.
+- Applicable JAMB examination year or examination profile.
+- Other settings already supported by the existing project.
+
+Show only the fields relevant to the selected examination type. Keep the form uncluttered.
+
+## Sources
+
+Preserve the existing source options and expand them only where necessary:
+
+1. Verified past questions.
+2. Teacher-uploaded questions and question documents.
+3. Approved AI-generated practice questions.
+4. Existing eligible topic quizzes, where compatible with the exam configuration.
+
+Add or complete two clear source actions:
+
+- **Generate Questions**
+- **Upload Questions**
+
+Both actions must use the existing Richmirabel UI patterns, loading behavior, and Gemini integration wherever applicable.
+
+Keep the existing tabs and page layout. Do not add an entirely separate source-management system.
+
+---
+
+# 5. GEMINI QUESTION GENERATION — JAMB-LEVEL QUALITY
+
+When the administrator chooses Generate Questions, provide a clean workflow for selecting:
+
+- Subject.
+- Topic or subtopic, if applicable.
+- Number of questions.
+- Difficulty level or distribution.
+- Examination type or target standard.
+- Optional additional instructions.
+
+The generation workflow must use the existing Gemini integration rather than introducing a competing implementation.
+
+## Standard JAMB-style questions
+
+When JAMB is selected, generate questions that resemble the standard, subject-specific difficulty, structure, reasoning requirements, and syllabus coverage of JAMB UTME questions.
+
+The objective is not to generate trivial textbook recall questions. Questions should appropriately test understanding, application, interpretation, calculations, and problem-solving according to the subject.
+
+Each generated question should contain the fields required by the existing question model, including as applicable:
+
+- Question text.
+- Four answer options for standard objective questions.
+- Correct answer.
+- Explanation or solution.
+- Subject identifier.
+- Topic and subtopic identifiers where available.
+- Difficulty.
+- Question type.
+- Source type.
+- Generation metadata where useful.
+- Applicable syllabus or examination profile.
+
+For calculation-based questions, generate coherent numerical values, correct units, a valid solution, and an answer that matches the supplied options.
+
+For Chemistry, Physics, Mathematics, Biology, and English, use subject-appropriate question construction. Do not apply one generic template to every subject.
+
+## Generation quality control
+
+After generation, validate questions before adding them to the review queue.
+
+Check for:
+
+- Missing question text.
+- Missing or malformed options.
+- Invalid correct-answer mappings.
+- Duplicate or near-duplicate questions.
+- Explanations that contradict the answer key.
+- Ambiguous questions.
+- Invalid numerical answers or units.
+- Incorrect subject or topic assignments.
+- Questions that do not fit the selected examination standard.
+
+Flag questionable items for administrator review rather than silently treating them as correct.
+
+Generated questions must be labelled **AI-generated practice**. They must never be presented as official JAMB past questions simply because they resemble JAMB questions.
+
+Do not fabricate official years, examination references, source URLs, citations, or provenance.
+
+If the current integration can genuinely retrieve external sources, use credible, traceable sources where appropriate. Store the real source URL, year, and provenance when available. If reliable retrieval is unavailable, explain the limitation and offer generated practice questions or document upload instead.
+
+Respect copyright and licensing. Do not reproduce restricted collections wholesale or claim that generated content is an official past-paper collection.
+
+## Generation UX
+
+Use the same established loading animation and loading-state components used by the existing Note Studio OCR flow wherever appropriate.
+
+The interface should clearly communicate:
+
+1. Generation is in progress.
+2. Questions are being validated.
+3. Results are ready for review.
+4. Generation failed and can be retried.
+
+Do not freeze the entire application during generation. Prevent accidental duplicate submissions and preserve the administrator's current selections if an operation fails.
+
+Generation must create reviewable question records, not merely render sample questions on the screen.
+
+---
+
+# 6. QUESTION UPLOAD — OCR AND SUBJECT CLASSIFICATION
+
+Complete the Upload Questions workflow using the existing upload and OCR infrastructure wherever possible.
+
+Support the file formats the existing application can actually process, such as images and PDFs. Do not advertise unsupported formats.
+
+## Upload workflow
+
+1. Administrator selects a subject.
+2. Administrator selects the source or examination category, if needed.
+3. Administrator uploads a supported file.
+4. The existing OCR/Gemini pipeline extracts question content.
+5. The system identifies question boundaries, answer options, answer keys, explanations, and relevant metadata where available.
+6. Extracted questions appear in an editable review interface.
+7. The administrator corrects any extraction errors.
+8. Questions are saved to the existing question bank with the correct subject and source metadata.
+
+Use the actual existing Note Studio upload, OCR, preview, progress, and loading components where applicable.
+
+**Do not replace a working OCR pipeline just to create a new upload experience. Extend it carefully.**
+
+The subject selected before upload must be saved to every applicable question record. It must not be a visual-only selection.
+
+If the document contains multiple subjects, do not silently classify everything under one subject. Flag detected mismatches and let the administrator confirm or correct the classification.
+
+Where the answer key is supplied separately, allow the administrator to upload or associate it with the questions. Match questions to answers carefully and flag uncertain matches.
+
+Do not invent answers for unreadable or missing answer keys. Allow those fields to remain unverified until reviewed.
+
+Preserve the original uploaded file reference when the existing storage architecture supports it.
+
+---
+
+# 7. ADMIN QUESTION REVIEW AND APPROVAL
+
+Questions generated or extracted from uploads must not automatically become approved exam questions.
+
+Provide a clean review experience organized by subject.
+
+Administrators should be able to:
+
+- Filter by subject, topic, source, review status, and examination type.
+- Preview question text and options.
+- Edit question text, options, correct answers, and explanations.
+- Correct subject and topic assignments.
+- Identify duplicates.
+- Flag ambiguous or uncertain questions.
+- Approve or reject individual questions.
+- Review a batch without losing changes.
+- See the source type and provenance for each question.
+
+Keep source types distinct:
+
+- Verified past question.
+- Uploaded question awaiting verification.
+- Approved uploaded question.
+- AI-generated practice question.
+- Approved AI-generated practice question.
+
+Approval must not convert an AI-generated question into an official past question.
+
+Where bulk actions exist, clearly show how many questions are affected and prevent accidental destructive operations.
+
+Only eligible, approved questions should be selectable for a published exam. The exact eligibility rules must respect the source and exam configuration.
+
+Persist all edits and review decisions using the existing data model or a carefully extended shared model.
+
+---
+
+# 8. EXAM CONFIGURATION AND QUESTION SELECTION
+
+The CBT Generator must select questions from the shared question bank using the administrator's configured requirements.
+
+Support the applicable combinations of:
+
+- Examination type.
+- Subject.
+- Topic or subtopic.
+- Question source.
+- Approval status.
+- Difficulty.
+- Question count.
+- Examination profile or year.
+
+Prevent accidental reuse of the same question within one examination unless the configuration explicitly permits it.
+
+If the question bank cannot satisfy the requested question count, clearly tell the administrator what is missing. Do not silently duplicate questions or fill the exam with fabricated records.
+
+Preview the actual selected questions before approval or publication.
+
+The question selection process must produce a stable exam version so students do not receive a different underlying examination simply because the question bank changes after publication.
+
+Preserve references to the exact questions and answer keys used by each exam version.
+
+---
+
+# 9. WEEKLY CBT — ADMINISTRATOR WORKFLOW
+
+Implement weekly CBT preparation and scheduling within the existing CBT Generator.
+
+The administrator must be able to:
+
+1. Configure the examination.
+2. Select eligible questions.
+3. Preview the examination.
+4. Review and correct questions.
+5. Save a draft.
+6. Submit it for review or approval when required by the existing roles.
+7. Approve it.
+8. Set its opening and closing date and time.
+9. Publish or schedule it.
+10. View its status and relevant attempt summaries.
+
+Support understandable lifecycle states, including:
+
+- Draft.
+- Awaiting review.
+- Approved.
+- Scheduled.
+- Coming soon.
+- Open.
+- Closed.
+- Completed by an individual student.
+
+Do not confuse an examination's lifecycle state with a student's individual attempt state.
+
+An unapproved examination must never become available to students, even if its scheduled opening time has arrived.
+
+The schedule must be based on the **Africa/Lagos** timezone. Store and compare times consistently so that browser timezone differences do not produce incorrect opening or closing behavior.
+
+Use the existing role and permission model. Do not invent an unrestricted approval mechanism or grant students administrator capabilities.
+
+---
+
+# 10. STUDENT CBT PAGE — EXISTING ROUTES
+
+Preserve the existing student CBT routes and build on their current components.
+
+Relevant existing routes include:
+
+- `/studio/cbt`
+- `/studio/cbt/jamb`
+
+The existing CBT landing page already introduces weekly practice and full JAMB simulation. Refine its functionality without replacing its identity or unrelated student navigation.
+
+Students must be able to distinguish:
+
+**Weekly CBT Practice** from **Full JAMB CBT Simulation**.
+
+Weekly practice should show useful information such as:
+
+- Examination title and week.
+- Subjects or subject combination.
+- Question count.
+- Duration.
+- Opening and closing times.
+- Current availability.
+- Countdown to opening when scheduled.
+- Attempt status.
+- Results or review availability after submission.
+
+Do not display a Start button for a locked examination as though the student can start it. Use an appropriate disabled state and explain when it becomes available.
+
+When the approved opening time arrives, the examination should become available automatically through the application's actual scheduling and data logic.
+
+When the closing time passes, prevent new attempts. Preserve existing attempts, results, and review access.
+
+If another weekly CBT is scheduled, show its next opening countdown where appropriate.
+
+Do not confuse a weekly CBT countdown with the timer inside an active examination.
+
+---
+
+# 11. FULL JAMB SIMULATION
+
+Keep Full JAMB CBT Simulation separate from the weekly practice schedule.
+
+Use the existing `/studio/cbt/jamb` route and its existing page structure.
+
+Use the examination profile appropriate to the selected JAMB year. The previously configured baseline is a 180-question examination with a two-hour duration, using 60 Use of English questions and 40 questions for each of the other three selected subjects. Verify this against the applicable official examination structure before presenting it as current. Make the profile configurable rather than permanently hard-coding the same structure for every year.
+
+English must be compulsory where required by the applicable examination profile. The other subjects should follow the student's valid subject combination and the configured profile.
+
+The student should be able to inspect the exam instructions and configuration before starting.
+
+Do not start the timer until the attempt is actually created and the student begins the exam.
+
+Do not invent questions simply to fill the required question count. If the available approved bank is insufficient, show a clear administrator-facing configuration problem instead of publishing an incomplete examination as complete.
+
+---
+
+# 12. EXAM ROOM — PROFESSIONAL CBT EXPERIENCE
+
+Build on the existing exam interface. Do not replace it with a generic form or a long page containing every question stacked vertically.
+
+Provide a focused, responsive examination workspace with:
+
+- Clear examination title.
+- Visible countdown timer.
+- Subject navigation.
+- Question number and question text.
+- Answer options.
+- Previous and Next controls.
+- A question palette or equivalent navigation.
+- Answered and unanswered indicators.
+- Mark for review / flag question.
+- Clear selected-answer styling.
+- Submission controls.
+- Responsive behavior for smaller screens.
+
+Allow students to navigate between questions without losing their answers.
+
+Allow them to revisit flagged questions before submission.
+
+Keep the visual design clean and spacious. On desktop, use the available space effectively without compressing the question text or creating unnecessary side panels. On mobile, prioritize readable questions and accessible navigation.
+
+Avoid accidental answer changes, confusing icon-only controls, and unnecessary visual distractions.
+
+## Submission
+
+When the student chooses to submit manually, show a confirmation summary with the number of answered, unanswered, and flagged questions where applicable.
+
+Require a clear confirmation before final submission.
+
+When the timer expires, automatically submit the attempt according to the configured exam rules.
+
+Once an attempt is submitted, prevent further answer changes for that attempt.
+
+---
+
+# 13. ATTEMPT PERSISTENCE, TIMER AND REFRESH SAFETY
+
+An examination must be a real attempt record, not just temporary component state.
+
+Use the project's existing backend and persistence architecture where available.
+
+Persist the appropriate information for each attempt, including:
+
+- Student identifier.
+- Examination and exam-version identifiers.
+- Attempt status.
+- Start time.
+- Deadline or end time.
+- Selected answers.
+- Question order and option order.
+- Flagged questions.
+- Submission time.
+- Calculated score and breakdown.
+
+If the project is still running as a frontend-only demo, implement the strongest appropriate demo behavior supported by the current architecture and clearly document its limitations. Do not claim that browser storage provides secure, cross-device, or server-enforced examination integrity.
+
+## Refresh and reconnection
+
+- Refreshing must not create a new attempt.
+- The existing attempt must retain its original question and option order.
+- Calculate remaining time from the persisted deadline rather than resetting the timer.
+- Restore saved answers and flagged questions.
+- If the student reconnects after the deadline, apply the configured automatic-submission or expiry behavior.
+- Do not grant a second official scored attempt for the same weekly CBT if the rule is one scored attempt per student per examination.
+- Do not delete previous attempts when creating a new exam or exam version.
+
+Enforce attempt limits using the backend where available. A client-side check alone is not sufficient to guarantee one attempt across devices or sessions.
+
+The full JAMB simulation must have its own attempt rules and must not be accidentally treated as a weekly CBT.
+
+---
+
+# 14. DETERMINISTIC GRADING
+
+Grading must be based on the stored answer key and the examination's configured scoring rules.
+
+Do not ask Gemini to decide whether an answer is correct or calculate the official score.
+
+The grading process must:
+
+1. Read the saved answers.
+2. Compare them with the answer key associated with the exact exam version.
+3. Apply the configured scoring rules.
+4. Calculate the total and subject breakdown.
+5. Store the result.
+6. Mark the attempt as submitted or completed.
+7. Make the result available to the student and authorized administrator.
+
+Handle unanswered questions according to the configured marking rules.
+
+If a question is discovered to have an incorrect or ambiguous answer key, provide an appropriate administrator correction and recalculation workflow that preserves an audit trail where supported. Do not silently alter completed results without traceability.
+
+Prevent duplicate grading or repeated submissions from creating inconsistent results.
+
+---
+
+# 15. RESULTS AND QUESTION-BY-QUESTION REVIEW
+
+After submission, display a clear results page with:
+
+- Overall score.
+- Total correct, incorrect, and unanswered questions where applicable.
+- Subject-level scores.
+- Time taken.
+- Examination type and title.
+- Submission status.
+- Access to detailed review.
+
+Use a clean hierarchy. Do not overwhelm the student with dozens of competing statistic cards.
+
+Provide a dedicated Review Attempt experience that allows the student to revisit the exact questions from the submitted examination.
+
+Where permitted by the exam settings, show:
+
+- The student's selected answer.
+- The correct answer.
+- Whether the answer was correct.
+- An explanation or solution when available.
+- Subject and topic.
+- Appropriate navigation between reviewed questions.
+
+Preserve the order and question content associated with that attempt. Do not accidentally display newer versions of questions as if they were the exact questions the student answered.
+
+If an explanation is unavailable, say so or omit the explanation section. Do not fabricate a teacher's explanation.
+
+Respect any configured rule that delays answer-key release until the examination closes.
+
+---
+
+# 16. ONE CONCISE, USEFUL AI PERFORMANCE REVIEW
+
+After the deterministic score has been calculated, use the existing Gemini integration to generate an optional overall performance analysis.
+
+**The student should receive one concise, useful review across the entire examination, not four repetitive, oversized reports for four different subjects.**
+
+The AI review should include:
+
+1. Overall performance summary.
+2. Strongest areas supported by the student's actual answers.
+3. Main weaknesses and misconceptions.
+4. Specific topics to revise.
+5. A small number of actionable next steps.
+6. Relevant advice for improving the next attempt.
+
+Use subject-level detail when it helps explain a weakness, but combine the findings into one coherent report.
+
+The AI must use the actual examination, stored answers, grading results, and available topic metadata. It must not invent scores, answers, weak topics, or achievements.
+
+If topic metadata is missing or unreliable, explain weaknesses at the subject or question level rather than making unsupported topic claims.
+
+Keep the report readable and concise. Use clear headings and short sections instead of an excessively long essay.
+
+The AI review must not alter the deterministic score, answer key, or attempt record.
+
+If Gemini is unavailable or the analysis fails, the student's result and detailed answer review must remain available. Show a sensible retry or unavailable state without forcing the student to retake the exam.
+
+Avoid generating duplicate reports unnecessarily for the same submitted attempt. Reuse a stored report where the existing architecture supports it.
+
+---
+
+# 17. PROGRESS PAGE — REAL EXAMINATION DATA
+
+Integrate actual weekly CBT and full JAMB simulation results into the existing Progress route:
+
+`/studio/progress`
+
+Preserve unrelated Progress features and its existing visual identity.
+
+Progress should present a clear, student-friendly overview of:
+
+- Completed weekly CBTs.
+- Completed full JAMB simulations.
+- Recent results.
+- Subject-level performance.
+- Previous attempt history.
+- Strengths and weaknesses supported by actual results.
+- Improvement over time where comparable attempts exist.
+- Links to relevant submitted attempts and detailed reviews.
+
+Separate weekly practice results from full JAMB simulations so the student does not mistake scores from different examination formats as directly equivalent.
+
+Do not compare scores from fundamentally different exams without an appropriate explanation.
+
+Only show topic-level weaknesses when the underlying questions have reliable topic metadata.
+
+Do not generate fake charts, invented attempts, hard-coded scores, or meaningless activity lists to make the page look populated.
+
+Use helpful empty states for students who have not completed an examination.
+
+Keep the page simple and focused. Do not turn it into a complex analytics dashboard.
+
+---
+
+# 18. SHARED DATA MODEL AND INTEGRATION
+
+All of these features must work with the same underlying data flow.
+
+Extend existing models where practical rather than creating redundant tables, duplicated state, or parallel mock systems.
+
+The implementation must maintain consistent relationships between:
+
+- Students.
+- Subjects and topics.
+- Question bank records.
+- Source and provenance metadata.
+- Question review and approval status.
+- Exam configurations.
+- Published exam versions.
+- Weekly schedules.
+- Full JAMB examination profiles.
+- Selected exam questions.
+- Student attempts.
+- Saved answers.
+- Scores and subject breakdowns.
+- Question-by-question reviews.
+- AI performance analyses.
+- Progress summaries.
+
+Use the current persistence layer and state-management patterns.
+
+If the application already has real backend services, use them. Do not replace backend persistence with local storage just because it is faster to implement.
+
+If the current application is still a frontend-only demo, keep its demo behavior consistent with the existing architecture and clearly identify which behaviors require backend enforcement for production.
+
+Do not invent a backend that is not present, pretend persistence works across users when it does not, or claim that local browser state guarantees exam security.
+
+---
+
+# 19. WEEKLY CBT SCHEDULING RULES
+
+Implement and verify the following lifecycle:
+
+**Draft → Review → Approval → Scheduled → Open → Closed**
+
+An examination can enter the Open state only if:
+
+- It has been approved.
+- Its opening time has arrived.
+- Its closing time has not passed.
+- Its exam version and required questions are valid.
+- The student is authorized to access it.
+
+At the scheduled closing time:
+
+- Prevent new attempts.
+- Preserve submitted results.
+- Preserve detailed answer reviews according to release settings.
+- Apply the configured expiry behavior to attempts already in progress.
+- Display the next scheduled weekly CBT when available.
+
+An unapproved exam must remain unavailable even if its scheduled start time has passed.
+
+Ensure that the countdown uses the actual scheduled timestamp. Do not use a fake ticking counter or a hard-coded countdown.
+
+The individual examination timer and the weekly availability window must be enforced independently.
+
+---
+
+# 20. ADMIN REVIEW, PUBLICATION AND STUDENT ACCESS MUST AGREE
+
+The administrator's actions must directly affect what students see.
+
+- A saved draft is not automatically published.
+- An unapproved exam is not available to students.
+- An approved exam with a future schedule appears as upcoming.
+- An approved exam becomes available at the correct opening time.
+- A closed exam cannot accept new attempts.
+- A student who completed the exam can access the saved result and permitted review.
+- Publishing a new exam must not overwrite older exam versions or erase attempt history.
+- Rejected questions must not silently re-enter an approved exam.
+- Changes to the question bank must not silently rewrite the contents of an already published exam.
+
+Use the existing authorization and role system. Apply server-side validation when supported by the architecture.
+
+---
+
+# 21. ACCESSIBILITY, ERRORS AND EDGE CASES
+
+Handle these cases cleanly:
+
+- Empty question bank.
+- Not enough eligible questions.
+- Unsupported upload type.
+- Failed OCR extraction.
+- Missing or uncertain answer key.
+- Failed Gemini generation.
+- Failed AI analysis.
+- Duplicate questions.
+- Invalid exam configuration.
+- Missing subject or topic metadata.
+- Examination scheduled in the future.
+- Examination that has already closed.
+- Unapproved examination whose scheduled opening time has passed.
+- Student refresh during an active attempt.
+- Student reconnection after the deadline.
+- Duplicate submission.
+- Attempt already completed.
+- Missing explanation.
+- Network or persistence failure.
+
+Do not silently swallow errors. Give users clear next steps and preserve recoverable work where possible.
+
+Use accessible form labels, keyboard navigation, visible focus, sufficient contrast, and understandable error messages.
+
+---
+
+# 22. IMPLEMENTATION PROCESS
+
+Follow this order so the project remains stable.
+
+## Phase 1 — Inspect
+
+Inspect the existing project before changing files.
+
+Identify:
+
+- The current CBT Generator implementation.
+- The existing question model and question bank.
+- The existing Gemini integration.
+- The Note Studio OCR/upload components and their loading animation.
+- The Past Questions manager.
+- The student CBT routes.
+- The current exam room, if any.
+- The Progress page and attempt/result models.
+- The existing storage or backend services.
+- Current styles and reusable UI components.
+
+Identify which requirements are already implemented, which are partially implemented, and which are missing.
+
+Do not rebuild existing working features.
+
+## Phase 2 — Establish shared data and rules
+
+Determine how existing question records, exam configurations, schedules, attempts, and results should connect.
+
+Extend existing types, models, and services with minimal disruption.
+
+Keep source provenance, approval, exam versioning, and attempt state consistent.
+
+## Phase 3 — Complete admin source workflows
+
+Complete question generation, upload/OCR, subject assignment, source metadata, validation, editing, and review.
+
+Reuse the existing Gemini and OCR workflows.
+
+## Phase 4 — Complete exam configuration and scheduling
+
+Connect approved questions to exam configurations, implement stable exam versions, and complete the weekly approval and scheduling lifecycle.
+
+## Phase 5 — Complete student CBT
+
+Connect the existing student routes to actual eligible exams. Implement availability, attempt creation, question navigation, timer behavior, persistence, submission, and results.
+
+## Phase 6 — Connect AI review and Progress
+
+Use saved attempts and deterministic results to generate concise AI feedback and update Progress using real records.
+
+## Phase 7 — Verify and report
+
+Run the available project checks, relevant tests, and build commands.
+
+Test the integration across administrator and student workflows.
+
+Do not stop after making the UI look complete. Verify the actual data flow wherever the existing architecture and environment permit it.
+
+---
+
+# 23. ACCEPTANCE TESTS
+
+Verify the following using the project's actual implementation and tests.
+
+### Question sourcing
+
+- An administrator can generate subject-specific JAMB-style practice questions.
+- Generated questions are clearly labelled as AI-generated practice.
+- An administrator can upload a supported question document.
+- Extracted questions are editable before approval.
+- The selected subject is persisted correctly.
+- Source provenance is not fabricated.
+- Missing answers and uncertain extraction results are flagged.
+- Duplicate and malformed questions are handled appropriately.
+
+### Review and publication
+
+- Questions can be edited, approved, and rejected.
+- Only eligible approved questions can be selected for publication.
+- The exam preview uses the actual selected questions.
+- Insufficient question-bank coverage is reported clearly.
+
+### Weekly CBT
+
+- An administrator can prepare, review, approve, and schedule a weekly CBT.
+- Students see a genuine countdown for an approved future examination.
+- An unapproved examination does not open automatically.
+- An approved examination becomes available at the correct time.
+- New attempts are blocked after closing.
+- Previous attempts and results remain available.
+
+### Student exam
+
+- The correct examination and subject combination are displayed.
+- The timer starts at the correct point.
+- Answer selection and navigation work.
+- Question and option order remain stable after refresh.
+- Answers and flags are restored when a student reconnects.
+- Manual submission requires confirmation.
+- Timer expiry triggers the configured submission behavior.
+- A completed attempt cannot be submitted repeatedly to create inconsistent results.
+
+### Results and review
+
+- Scores are calculated from the stored answer key.
+- Subject breakdowns agree with the submitted answers.
+- The detailed review shows the correct version of each question.
+- The AI analysis reflects actual performance and does not change the score.
+- AI analysis failure does not remove access to results.
+
+### Progress
+
+- Real completed attempts appear in Progress.
+- Weekly practice and full JAMB simulation remain distinguishable.
+- No fabricated performance records appear.
+- Empty states work correctly.
+
+### Regression protection
+
+- Existing Note Studio OCR still works.
+- Existing lesson-note workflows still work.
+- Existing topic-quiz workflows still work.
+- Existing Past Papers features still work.
+- Existing navigation and unrelated pages remain unchanged.
+- Existing design conventions and loading animations remain intact.
+
+Report which tests were actually run, which passed, which failed, and which could not be tested in the current environment.
+
+Do not claim all acceptance tests passed if only the application build was run.
+
+---
+
+# 24. FINAL DELIVERY RULES
+
+The final result must feel like one deliberately designed Richmirabel CBT system, not several disconnected features assembled together.
+
+It must be:
+
+- Visually clean, spacious, and professional.
+- Consistent with the existing Richmirabel design.
+- Useful for Baba Neh's real question-review workflow.
+- Suitable for realistic JAMB-level practice.
+- Connected across administration, scheduling, student attempts, results, AI analysis, and Progress.
+- Honest about the difference between verified past questions and generated practice.
+- Careful with question provenance, grading, persistence, and exam timing.
+- Built incrementally without damaging existing functionality.
+
+**Do not make any changes outside the explicitly required CBT-related scope.**
+
+If a proposed change would affect unrelated functionality, do not make it without first explaining why it is necessary and asking for approval.
+
+Do not finish by presenting a long list of planned features that were never implemented. Finish by summarizing the actual changes, the files or areas affected, the verification performed, and any genuine limitations.
+
+## The ultimate instruction
+
+**Upgrade the existing Richmirabel CBT system end to end. Preserve everything else. Reuse what already works. Keep the UI spacious and distinctive, never generic or cramped. Connect real question records to approved exams, student attempts, deterministic results, concise AI feedback, and Progress. Do not fake functionality, and do not change anything unrelated to this task.**

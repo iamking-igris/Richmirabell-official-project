@@ -24,7 +24,10 @@ function Dashboard() {
   const trial = trialLeft(trialStart, subscribed);
   const best = bestByTopic(attempts);
 
-  const mine = all;
+  const selected = useSession((s) => s.selectedSubjects);
+  const mine = selected.length
+    ? selected.map((id) => all.find((s) => s.id === id)).filter((s): s is (typeof all)[number] => Boolean(s))
+    : all.slice(0, 4);
   const rows = mine.flatMap((s) => s.topics);
   const finished = rows.filter((t) => best.has(t.id)).length;
   const mineBest = [...best.entries()].filter(([id]) => rows.some((t) => t.id === id));
@@ -40,7 +43,7 @@ function Dashboard() {
       <h1 className="font-display text-4xl sm:text-5xl">{greeting(name.split(" ")[0] || "there")}</h1>
       <p className="mt-2 max-w-lg text-muted">
         {exams.length ? `Preparing for ${exams.map((e) => e.toUpperCase()).join(" and ")}. ` : ""}
-        Physics, Chemistry, Biology, and Mathematics are open.
+        Your subjects: {mine.map((s) => s.name).join(", ") || "not set yet"}.
         {subscribed
           ? " Term access is active."
           : trial.active
@@ -127,15 +130,15 @@ function Dashboard() {
           <h3 className="mt-1 font-display text-xl">Topic quizzes</h3>
           <p className="mt-2 text-sm text-muted">Short sets across Physics, Chemistry, Biology, and Mathematics.</p>
         </Link>
-        <Link to="/studio/cbt" className="rounded-2xl border border-line bg-surface p-5">
+        <Link to="/studio/past-questions" className="rounded-2xl border border-line bg-surface p-5">
           <p className="text-xs font-semibold text-primary">Open</p>
           <h3 className="mt-1 font-display text-xl">WAEC past papers</h3>
-          <p className="mt-2 text-sm text-muted">Synthetic WAEC-style papers are available in the demo workflow.</p>
+          <p className="mt-2 text-sm text-muted">Practice official WAEC examination papers by subject and year with verified answers.</p>
         </Link>
         <Link to="/studio/cbt" className="rounded-2xl border border-line bg-surface p-5">
           <p className="text-xs font-semibold text-primary">Open</p>
           <h3 className="mt-1 font-display text-xl">JAMB CBT</h3>
-          <p className="mt-2 text-sm text-muted">The demo full-paper CBT is ready for the standard four-subject format.</p>
+          <p className="mt-2 text-sm text-muted">The full-paper CBT is ready for the standard four-subject format.</p>
         </Link>
       </div>
     </div>

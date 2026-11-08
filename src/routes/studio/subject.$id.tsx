@@ -37,11 +37,6 @@ function SubjectPage() {
           <p className="mt-1 max-w-xl text-sm text-primary-fg/85">{subject.blurb}</p>
         </div>
       </div>
-      {demoMode && demoCount > 0 && (
-        <p className="mt-4 rounded-2xl border border-dashed border-line bg-soft/60 px-4 py-3 text-sm text-muted">
-          Demo mode is on. {demoCount} synthetic subtopic{demoCount === 1 ? "" : "s"} are included for testing and are labelled DEMO. They are not teacher-approved content.
-        </p>
-      )}
       <div className="mt-6 space-y-6">
         {groups.map(({ main, items }) => (
           <section key={main}>
@@ -54,7 +49,7 @@ function SubjectPage() {
                     <Link to="/studio/topic/$id" params={{ id: topic.id }} className="flex min-h-16 items-center gap-4 px-4 py-4 hover:bg-paper sm:px-5">
                       <span className="w-6 text-sm text-muted">{index + 1}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{topic.title}{topic.origin === "demo" ? <span className="ml-2 rounded-full bg-soft px-2 py-0.5 text-xs font-semibold text-muted">DEMO</span> : null}</span>
+                        <span className="block font-medium">{topic.title}</span>
                         <span className="block truncate text-sm text-muted">{topic.summary}</span>
                       </span>
                       <span className="shrink-0 text-right text-sm">

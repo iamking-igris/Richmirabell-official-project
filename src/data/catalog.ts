@@ -1,4 +1,5 @@
 export type Choice = "A" | "B" | "C" | "D";
+export type ReviewStatus = "AI Solved" | "Needs Review" | "Teacher Reviewed";
 
 export type Question = {
   id: string;
@@ -7,13 +8,35 @@ export type Question = {
   answer?: Choice;
   explain?: string;
   answerKeyStatus?: "shipped" | "demo" | "missing";
+  needsReview?: boolean;
+  reviewReason?: string;
+  sourceOrigin?: "ai_solved" | "key_matched" | "manual";
+  reviewStatus?: ReviewStatus;
 };
+
+export interface TheoryPart {
+  label: string; // e.g., "4a(i)"
+  questionText: string;
+  directAnswer: string;
+  tutorExplanation: string;
+  marks?: string; // e.g., "[2 marks]"
+}
 
 export type TheoryQuestion = {
   id: string;
+  introText?: string;
+  parts?: TheoryPart[];
+  diagramSvg?: string;
+  diagramCaption?: string;
   prompt: string;
   modelAnswer?: string;
   marks?: number;
+  explain?: string;
+  subparts?: { label: string; prompt: string; modelAnswer: string; marks?: number }[];
+  needsReview?: boolean;
+  reviewReason?: string;
+  sourceOrigin?: "ai_solved" | "key_matched" | "manual";
+  reviewStatus?: ReviewStatus;
 };
 
 export type NoteBlock = {
@@ -21,6 +44,8 @@ export type NoteBlock = {
   paragraphs: string[];
   formula?: string;
   points?: string[];
+  diagramCaption?: string;
+  diagramSvg?: string;
 };
 
 export type ContentOrigin = "shipped" | "demo";
@@ -33,6 +58,7 @@ export type Topic = {
   diagram?: "wave" | "cell" | "balance";
   objectives?: string[];
   notes: NoteBlock[];
+  body?: string;
   questions: Question[];
   theory?: TheoryQuestion[];
   status?: "published" | "draft";
@@ -51,6 +77,8 @@ export type Subject = {
   /** Optional photo path. Defaults to /media/<id>.jpg */
   photo?: string;
   topics: Topic[];
+  /** Admin-controlled. false hides the subject from students. */
+  available?: boolean;
 };
 
 const q = (
@@ -104,6 +132,10 @@ export const subjects: Subject[] = [
           q("q2", "For 2x² + 5x − 3 = 0, the value of a is", ["5", "−3", "2", "0"], "C", "a is the coefficient of x², which is 2."),
           q("q3", "If the discriminant is zero, the equation has", ["two different real roots", "no roots", "one repeated real root", "three roots"], "C", "A zero discriminant means the roots coincide."),
           q("q4", "The quadratic formula solves", ["only perfect squares", "any ax² + bx + c = 0 with a ≠ 0", "linear equations only", "simultaneous equations only"], "B", "The formula covers every standard quadratic."),
+        ],
+        theory: [
+          { id: "qt1", prompt: "Solve 2x² − 5x − 3 = 0 by factorisation or the formula. Show your working.", modelAnswer: "Factors as (2x + 1)(x − 3) = 0, so x = −1/2 or x = 3.", marks: 4 },
+          { id: "qt2", prompt: "Explain what the discriminant tells you about the number of real roots.", modelAnswer: "b² − 4ac > 0 two real roots; = 0 one repeated root; < 0 no real roots.", marks: 3 },
         ],
       },
       {

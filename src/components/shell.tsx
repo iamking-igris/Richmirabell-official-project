@@ -1,5 +1,5 @@
 import { Link, Navigate, useNavigate, useRouterState } from "@tanstack/react-router";
-import { BookOpen, Home, PenLine, UserRound, BarChart3 } from "lucide-react";
+import { BookOpen, FileText, Home, PenLine, UserRound, BarChart3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { BrandMark } from "@/components/brand";
 import { cn } from "@/lib/cn";
@@ -7,9 +7,9 @@ import { trialLeft, useSession } from "@/lib/session";
 
 const links = [
   { to: "/studio", label: "Home", icon: Home, exact: true },
-  { to: "/studio/progress", label: "Progress", icon: BarChart3, exact: false },
+  { to: "/studio/past-questions", label: "Past Papers", icon: FileText, exact: false },
   { to: "/studio/cbt", label: "Take CBT", icon: PenLine, exact: false, center: true },
-  { to: "/studio/guides", label: "Guides", icon: BookOpen, exact: false },
+  { to: "/studio/progress", label: "Progress", icon: BarChart3, exact: false },
   { to: "/studio/account", label: "Account", icon: UserRound, exact: false },
 ] as const;
 
@@ -57,7 +57,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 leave();
                 navigate({ to: "/" });
               }}
-              className="min-h-11 rounded-full px-3 text-sm text-muted hover:text-ink"
+              className="hidden sm:inline-flex min-h-11 items-center rounded-full px-3 text-sm text-muted hover:text-ink"
             >
               Log out
             </button>
@@ -98,7 +98,9 @@ export function Shell({ children }: { children: ReactNode }) {
 export function Gate({ children }: { children: ReactNode }) {
   const name = useSession((s) => s.name);
   const complete = useSession((s) => s.onboardingComplete);
+  const enter = useSession((s) => s.enter);
   const navigate = useNavigate();
+
   if (!name) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper px-4">
@@ -107,10 +109,20 @@ export function Gate({ children }: { children: ReactNode }) {
           <h1 className="mt-2 font-display text-3xl">Sign in to continue</h1>
           <p className="mt-2 text-sm text-muted">Physics, Chemistry, Biology, and Mathematics are open. Your two free days start after a short setup.</p>
           <div className="mt-6 flex flex-col gap-2">
-            <button type="button" onClick={() => navigate({ to: "/create-account" })} className="w-full rounded-full bg-primary py-3 font-semibold text-primary-fg">
-              Start free trial
+            <button
+              type="button"
+              onClick={() => {
+                enter("Student Candidate", "student@gmail.com");
+              }}
+              className="w-full rounded-full bg-primary py-3 font-semibold text-primary-fg hover:opacity-90"
+            >
+              Continue as Student Candidate
             </button>
-            <button type="button" onClick={() => navigate({ to: "/login" })} className="w-full rounded-full border border-line py-3 font-semibold">
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/login" })}
+              className="w-full rounded-full border border-line py-3 font-semibold hover:bg-soft"
+            >
               Log in
             </button>
           </div>

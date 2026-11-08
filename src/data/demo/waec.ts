@@ -36,4 +36,15 @@ export const demoWaecPapers: DemoWaecPaper[] = [
     ],
   },
 ];
-export function findWaecPaper(id: string) { return demoWaecPapers.find(p => p.id === id) ?? null; }
+export function findWaecPaper(id: string) {
+  try {
+    const fromStore = localStorage.getItem("richmirabel-waec-papers-v2");
+    if (fromStore) {
+      const parsed = JSON.parse(fromStore);
+      const papers = parsed.state?.papers || [];
+      const found = papers.find((p: any) => p.id === id);
+      if (found) return found;
+    }
+  } catch {}
+  return demoWaecPapers.find(p => p.id === id) ?? null;
+}

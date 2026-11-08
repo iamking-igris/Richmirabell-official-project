@@ -49,7 +49,7 @@ function CreateAccount() {
         <div>
           <h1 className="font-display text-4xl sm:text-5xl">Create your account</h1>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
-            Your progress is saved on this device. Next you choose WAEC, JAMB, or both, then Physics opens. Your two free days start after that.
+            Create your account to save your learning progress and access Richmirabel across your devices.
           </p>
           {existing && status !== "success" && (
             <p className="mt-4 border border-line bg-surface px-4 py-3 text-sm">
@@ -69,71 +69,110 @@ function CreateAccount() {
               </Link>
             </div>
           ) : (
-            <form
-              className="mt-8 space-y-4"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault();
-                const next = validate(fields);
-                setErrors(next);
-                if (Object.keys(next).length > 0) {
-                  setStatus("error");
-                  setFormError("Check the fields below.");
-                  return;
-                }
-                if (existing) {
-                  navigate({ to: "/studio" });
-                  return;
-                }
-                setStatus("submitting");
-                setFormError("");
-                window.setTimeout(() => {
-                  enter(fields.name.trim(), fields.email.trim());
-                  navigate({ to: "/onboarding" });
-                }, 400);
-              }}
-            >
-              <Field id="first-name" label="First name" error={errors.name} value={fields.name} autoComplete="given-name" onChange={(value) => set("name", value)} />
-              <Field id="email" label="Email address" type="email" error={errors.email} value={fields.email} autoComplete="email" onChange={(value) => set("email", value)} />
-              <Field
-                id="password"
-                label="Password"
-                type={show ? "text" : "password"}
-                error={errors.password}
-                value={fields.password}
-                autoComplete="new-password"
-                onChange={(value) => set("password", value)}
-                toggle={{ show, onToggle: () => setShow((v) => !v) }}
-              />
-              <Field
-                id="confirm"
-                label="Confirm password"
-                type={show ? "text" : "password"}
-                error={errors.confirm}
-                value={fields.confirm}
-                autoComplete="new-password"
-                onChange={(value) => set("confirm", value)}
-              />
-              {formError && (
-                <p className="text-sm text-ink" role="alert">
-                  {formError}
-                </p>
-              )}
-              <button type="submit" disabled={status === "submitting"} className="inline-flex min-h-11 w-full items-center justify-center bg-primary text-sm font-semibold text-primary-fg disabled:opacity-60 sm:w-auto sm:px-8">
-                {status === "submitting" ? "Starting your trial…" : "Create account"}
+            <div className="mt-8 space-y-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus("submitting");
+                  window.setTimeout(() => {
+                    enter("Google Student", "student.google@gmail.com");
+                    navigate({ to: "/onboarding" });
+                  }, 400);
+                }}
+                disabled={status === "submitting"}
+                className="flex min-h-12 w-full items-center justify-center gap-3 border border-line bg-surface px-4 py-3 font-semibold text-ink shadow-xs transition hover:bg-soft focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+              >
+                <svg className="size-5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.11 0-5.74-2.1-6.68-4.93H1.36v3.15C3.35 21.32 7.39 24 12 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.32 14.27c-.24-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.36C.49 8.31 0 10.1 0 12s.49 3.69 1.36 5.42l3.96-3.15z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.94 1.19 15.23 0 12 0 7.39 0 3.35 2.68 1.36 6.58l3.96 3.15c.94-2.83 3.57-4.98 6.68-4.98z"
+                  />
+                </svg>
+                Continue with Google
               </button>
-              <p className="text-sm text-muted">
-                Sign-in on another device is not available yet.
-                {existing ? (
-                  <>
-                    {" "}
-                    <Link to="/studio" className="font-semibold text-primary">
-                      Continue on this device
-                    </Link>
-                  </>
-                ) : null}
-              </p>
-            </form>
+
+              <div className="relative flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-line" />
+                </div>
+                <span className="relative bg-paper px-3 text-xs uppercase tracking-wider text-muted">
+                  Or continue with email
+                </span>
+              </div>
+
+              <form
+                className="space-y-4"
+                noValidate
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const next = validate(fields);
+                  setErrors(next);
+                  if (Object.keys(next).length > 0) {
+                    setStatus("error");
+                    setFormError("Check the fields below.");
+                    return;
+                  }
+                  if (existing) {
+                    navigate({ to: "/studio" });
+                    return;
+                  }
+                  setStatus("submitting");
+                  setFormError("");
+                  window.setTimeout(() => {
+                    enter(fields.name.trim(), fields.email.trim());
+                    navigate({ to: "/onboarding" });
+                  }, 400);
+                }}
+              >
+                <Field id="first-name" label="First name" error={errors.name} value={fields.name} autoComplete="given-name" onChange={(value) => set("name", value)} />
+                <Field id="email" label="Email address" type="email" error={errors.email} value={fields.email} autoComplete="email" onChange={(value) => set("email", value)} />
+                <Field
+                  id="password"
+                  label="Password"
+                  type={show ? "text" : "password"}
+                  error={errors.password}
+                  value={fields.password}
+                  autoComplete="new-password"
+                  onChange={(value) => set("password", value)}
+                  toggle={{ show, onToggle: () => setShow((v) => !v) }}
+                />
+                <Field
+                  id="confirm"
+                  label="Confirm password"
+                  type={show ? "text" : "password"}
+                  error={errors.confirm}
+                  value={fields.confirm}
+                  autoComplete="new-password"
+                  onChange={(value) => set("confirm", value)}
+                />
+                {formError && (
+                  <p className="text-sm text-ink" role="alert">
+                    {formError}
+                  </p>
+                )}
+                <button type="submit" disabled={status === "submitting"} className="inline-flex min-h-11 w-full items-center justify-center bg-primary text-sm font-semibold text-primary-fg disabled:opacity-60 sm:w-auto sm:px-8">
+                  {status === "submitting" ? "Starting your trial…" : "Create account"}
+                </button>
+                <p className="text-sm text-muted">
+                  Already have an account?{" "}
+                  <Link to="/login" className="font-semibold text-primary">
+                    Log in
+                  </Link>
+                </p>
+              </form>
+            </div>
           )}
         </div>
         <img src="/media/atelier.jpg" alt="An open green book and a brass compass on warm paper" className="photo hidden aspect-[4/3] w-full object-cover lg:block" />

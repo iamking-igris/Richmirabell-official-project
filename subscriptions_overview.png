@@ -1,0 +1,124 @@
+- generic [ref=e3]:
+  - complementary [ref=e18]:
+    - paragraph [ref=e19]: Richmirabel
+    - paragraph [ref=e20]: Admin · demo
+    - navigation [ref=e21]:
+      - link "Overview" [ref=e22] [cursor=pointer]:
+        - /url: /admin
+      - link "Subjects & Content" [ref=e23] [cursor=pointer]:
+        - /url: /admin/subjects
+      - link "Past Questions" [ref=e24] [cursor=pointer]:
+        - /url: /admin/past-questions
+      - link "CBT Generator" [ref=e25] [cursor=pointer]:
+        - /url: /admin/cbt
+      - link "Students" [ref=e26] [cursor=pointer]:
+        - /url: /admin/students
+      - link "Subscriptions & Pricing" [ref=e27] [cursor=pointer]:
+        - /url: /admin/subscriptions
+      - link "Payments & Revenue" [ref=e28] [cursor=pointer]:
+        - /url: /admin/payments
+      - link "Analytics" [ref=e29] [cursor=pointer]:
+        - /url: /admin/analytics
+      - link "Settings" [ref=e30] [cursor=pointer]:
+        - /url: /admin/settings
+    - button "Sign out" [ref=e31] [cursor=pointer]
+  - main [ref=e33]:
+    - generic [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]: Administration
+            - generic [ref=e39]: ·
+            - generic [ref=e40]: Monthly Subscription Engine
+          - heading "Subscriptions & Pricing" [level=1] [ref=e41]
+          - paragraph [ref=e42]: Configure monthly subscription products, monitor student renewal activity, review access periods, and manage complimentary grants.
+        - generic [ref=e43]:
+          - button "Grant Manual Access" [ref=e44] [cursor=pointer]
+          - button "New Plan" [ref=e50] [cursor=pointer]
+      - generic [ref=e53]:
+        - button "Overview" [ref=e54] [cursor=pointer]
+        - button "Plans & Pricing 2" [ref=e58] [cursor=pointer]:
+          - generic [ref=e62]: Plans & Pricing
+          - generic [ref=e63]: "2"
+        - button "Subscribers 4" [ref=e64] [cursor=pointer]:
+          - generic [ref=e69]: Subscribers
+          - generic [ref=e70]: "4"
+        - button "Subscription Activity 3" [ref=e71] [cursor=pointer]:
+          - generic [ref=e75]: Subscription Activity
+          - generic [ref=e76]: "3"
+        - button "Manual Access 1" [ref=e77] [cursor=pointer]:
+          - generic [ref=e82]: Manual Access
+          - generic [ref=e83]: "1"
+        - button "Student Pricing Preview" [ref=e84] [cursor=pointer]
+      - generic [ref=e89]:
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]: Active Monthly
+            - paragraph [ref=e98]: "1"
+            - paragraph [ref=e99]: Paid monthly subscribers
+          - generic [ref=e100]:
+            - generic [ref=e101]: Trial Students
+            - paragraph [ref=e106]: "1"
+            - paragraph [ref=e107]: 48-hr evaluation access
+          - generic [ref=e108]:
+            - generic [ref=e109]: Expiring Soon
+            - paragraph [ref=e113]: "1"
+            - paragraph [ref=e114]: Within next 7 days
+          - generic [ref=e115]:
+            - generic [ref=e116]: Expired
+            - paragraph [ref=e123]: "1"
+            - paragraph [ref=e124]: Awaiting candidate renewal
+          - generic [ref=e125]:
+            - generic [ref=e126]: Manual Grants
+            - paragraph [ref=e132]: "1"
+            - paragraph [ref=e133]: Complimentary grants
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]:
+                - heading "Upcoming Expirations (7 Days)" [level=3] [ref=e138]
+                - paragraph [ref=e139]: Students approaching renewal deadline
+              - generic [ref=e140]: 1 Due Soon
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - paragraph [ref=e144]: Fatima Yusuf
+                - paragraph [ref=e145]: STU-2026-003 · Expires 04/11/2026 (1d left)
+              - generic [ref=e146]:
+                - link "View Student" [ref=e147] [cursor=pointer]:
+                  - /url: /admin/students
+                - button "Audit history" [ref=e152] [cursor=pointer]
+          - generic [ref=e156]:
+            - generic [ref=e157]:
+              - generic [ref=e158]:
+                - heading "Expired Subscriptions" [level=3] [ref=e159]
+                - paragraph [ref=e160]: Accounts remain active; practice features await student renewal.
+              - generic [ref=e161]: 2 Expired
+            - generic [ref=e162]:
+              - generic [ref=e163]:
+                - generic [ref=e164]:
+                  - paragraph [ref=e165]: Adaeze Okonkwo
+                  - paragraph [ref=e166]: STU-2026-001 · Lapsed 26/10/2026
+                - generic [ref=e167]:
+                  - link "View Student" [ref=e168] [cursor=pointer]:
+                    - /url: /admin/students
+                  - button "Audit history" [ref=e173] [cursor=pointer]
+              - generic [ref=e177]:
+                - generic [ref=e178]:
+                  - paragraph [ref=e179]: Tunde Adebayo
+                  - paragraph [ref=e180]: STU-2026-004 · Lapsed 10/10/2026
+                - generic [ref=e181]:
+                  - link "View Student" [ref=e182] [cursor=pointer]:
+                    - /url: /admin/students
+                  - button "Audit history" [ref=e187] [cursor=pointer]
+        - generic [ref=e191]:
+          - heading "Student-Initiated Renewal & Admin Governance Rules" [level=4] [ref=e192]
+          - generic [ref=e197]:
+            - generic [ref=e198]:
+              - paragraph [ref=e199]: 1. Student-Owned Renewals
+              - paragraph [ref=e200]: Students initiate and complete their own monthly renewals from their account. Administrators observe activity but never trigger paid renewals.
+            - generic [ref=e201]:
+              - paragraph [ref=e202]: 2. Zero Payment Generation
+              - paragraph [ref=e203]: Managing or observing expired subscriptions never creates transactions. Financial records exist only in Payments & Revenue.
+            - generic [ref=e204]:
+              - paragraph [ref=e205]: 3. Pure Complimentary Access
+              - paragraph [ref=e206]: Complimentary scholarship grants are recorded under Manual Access with audit justifications, strictly separated from paid subscription revenue.

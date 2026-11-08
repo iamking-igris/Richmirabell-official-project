@@ -1,0 +1,253 @@
+- generic [ref=e3]:
+  - complementary [ref=e18]:
+    - paragraph [ref=e19]: Richmirabel
+    - paragraph [ref=e20]: Admin · demo
+    - navigation [ref=e21]:
+      - link "Overview" [ref=e22] [cursor=pointer]:
+        - /url: /admin
+      - link "Subjects & Content" [ref=e23] [cursor=pointer]:
+        - /url: /admin/subjects
+      - link "Past Questions" [ref=e24] [cursor=pointer]:
+        - /url: /admin/past-questions
+      - link "CBT Generator" [ref=e25] [cursor=pointer]:
+        - /url: /admin/cbt
+      - link "Students" [ref=e26] [cursor=pointer]:
+        - /url: /admin/students
+      - link "Subscriptions & Pricing" [ref=e27] [cursor=pointer]:
+        - /url: /admin/subscriptions
+      - link "Payments & Revenue" [ref=e28] [cursor=pointer]:
+        - /url: /admin/payments
+      - link "Analytics" [ref=e29] [cursor=pointer]:
+        - /url: /admin/analytics
+      - link "Settings" [ref=e30] [cursor=pointer]:
+        - /url: /admin/settings
+    - button "Sign out" [ref=e31] [cursor=pointer]
+  - main [ref=e33]:
+    - generic [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]:
+              - generic [ref=e39]: Administration
+              - generic [ref=e40]: Africa/Lagos (WAT)
+            - heading "Student Management Centre" [level=1] [ref=e41]
+            - paragraph [ref=e42]: Monitor student records, review CBT and WAEC examination history, inspect learning activity, and manage account credentials.
+          - generic [ref=e44]:
+            - text: "Active Enrolment:"
+            - strong [ref=e45]: 5 candidates
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]: Total Students
+            - generic [ref=e49]: "5"
+            - generic [ref=e57]: Enrolled records
+          - generic [ref=e58]:
+            - generic [ref=e59]: Active Accounts
+            - generic [ref=e60]: "4"
+            - generic [ref=e66]: 80% of total
+          - generic [ref=e67]:
+            - generic [ref=e68]: Trial Access
+            - generic [ref=e69]: "1"
+            - generic [ref=e75]: 48-hr evaluations
+          - generic [ref=e76]:
+            - generic [ref=e77]: Paid Students
+            - generic [ref=e78]: "2"
+            - generic [ref=e83]: Term & UTME plans
+          - generic [ref=e84]:
+            - generic [ref=e85]: Suspended
+            - generic [ref=e86]: "1"
+            - generic [ref=e91]: Access restricted
+          - generic [ref=e92]:
+            - generic [ref=e93]: Expired Plans
+            - generic [ref=e94]: "1"
+            - generic [ref=e99]: Awaiting renewal
+      - generic [ref=e100]:
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - textbox "Search by student name, email, or student ID..." [ref=e104]
+            - generic [ref=e105]:
+              - combobox [ref=e106]:
+                - option "All Subjects" [selected]
+                - option "English"
+                - option "Mathematics"
+                - option "Physics"
+                - option "Chemistry"
+                - option "Biology"
+                - option "Economics"
+                - option "Government"
+                - option "Literature"
+                - option "Accounting"
+              - combobox [ref=e107]:
+                - 'option "Sort: Newest Registration" [selected]'
+                - 'option "Sort: Oldest Registration"'
+                - 'option "Sort: Name A–Z"'
+                - 'option "Sort: Name Z–A"'
+                - 'option "Sort: Recently Active"'
+          - generic [ref=e108]:
+            - button "All Students 5" [ref=e109] [cursor=pointer]:
+              - generic [ref=e110]: All Students
+              - generic [ref=e111]: "5"
+            - button "Active 4" [ref=e112] [cursor=pointer]:
+              - generic [ref=e113]: Active
+              - generic [ref=e114]: "4"
+            - button "Suspended 1" [ref=e115] [cursor=pointer]:
+              - generic [ref=e116]: Suspended
+              - generic [ref=e117]: "1"
+            - button "Trial 1" [ref=e118] [cursor=pointer]:
+              - generic [ref=e119]: Trial
+              - generic [ref=e120]: "1"
+            - button "Paid 2" [ref=e121] [cursor=pointer]:
+              - generic [ref=e122]: Paid
+              - generic [ref=e123]: "2"
+            - button "Manual 1" [ref=e124] [cursor=pointer]:
+              - generic [ref=e125]: Manual
+              - generic [ref=e126]: "1"
+            - button "Expired 1" [ref=e127] [cursor=pointer]:
+              - generic [ref=e128]: Expired
+              - generic [ref=e129]: "1"
+            - button "Archived 0" [ref=e130] [cursor=pointer]:
+              - generic [ref=e131]: Archived
+              - generic [ref=e132]: "0"
+        - generic [ref=e133]:
+          - table [ref=e134]:
+            - rowgroup [ref=e135]:
+              - row [ref=e136]:
+                - columnheader "Student" [ref=e137]
+                - columnheader "Student ID" [ref=e138]
+                - columnheader "Selected Subjects" [ref=e139]
+                - columnheader "Access Plan" [ref=e140]
+                - columnheader "Account Status" [ref=e141]
+                - columnheader "Registered" [ref=e142]
+                - columnheader "Last Active" [ref=e143]
+                - columnheader "Actions" [ref=e144]
+            - rowgroup [ref=e145]:
+              - row [ref=e146]:
+                - cell "NE Ngozi Eze ngozi@example.com" [ref=e147]:
+                  - generic [ref=e148]:
+                    - generic [ref=e149]: NE
+                    - generic [ref=e150]:
+                      - button "Ngozi Eze" [ref=e151] [cursor=pointer]
+                      - generic [ref=e152]: ngozi@example.com
+                - cell "STU-2026-005" [ref=e153]
+                - cell "English Physics Mathematics Chemistry" [ref=e154]:
+                  - generic [ref=e155]:
+                    - generic "Compulsory JAMB Subject" [ref=e156]: English
+                    - generic [ref=e157]: Physics
+                    - generic [ref=e158]: Mathematics
+                    - generic [ref=e159]: Chemistry
+                - cell "Manual Grant" [ref=e160]
+                - cell "Active" [ref=e162]
+                - cell "2026-10-15" [ref=e165]
+                - cell "2026-10-24" [ref=e166]
+                - cell [ref=e167]:
+                  - generic [ref=e168]:
+                    - button "View Profile" [ref=e169] [cursor=pointer]
+                    - button "Edit profile" [ref=e170] [cursor=pointer]
+                    - button "Suspend student account" [ref=e173] [cursor=pointer]
+                    - button "Archive student" [ref=e176] [cursor=pointer]
+              - row [ref=e180]:
+                - cell "TA Tunde Adebayo tunde@example.com" [ref=e181]:
+                  - generic [ref=e182]:
+                    - generic [ref=e183]: TA
+                    - generic [ref=e184]:
+                      - button "Tunde Adebayo" [ref=e185] [cursor=pointer]
+                      - generic [ref=e186]: tunde@example.com
+                - cell "STU-2026-004" [ref=e187]
+                - cell "English Physics Chemistry Biology" [ref=e188]:
+                  - generic [ref=e189]:
+                    - generic "Compulsory JAMB Subject" [ref=e190]: English
+                    - generic [ref=e191]: Physics
+                    - generic [ref=e192]: Chemistry
+                    - generic [ref=e193]: Biology
+                - cell "Expired" [ref=e194]
+                - cell "Suspended" [ref=e196]
+                - cell "2026-10-10" [ref=e199]
+                - cell "2026-10-12" [ref=e200]
+                - cell [ref=e201]:
+                  - generic [ref=e202]:
+                    - button "View Profile" [ref=e203] [cursor=pointer]
+                    - button "Edit profile" [ref=e204] [cursor=pointer]
+                    - button "Restore student account" [ref=e207] [cursor=pointer]
+                    - button "Archive student" [ref=e211] [cursor=pointer]
+              - row [ref=e215]:
+                - cell "AO Adaeze Okonkwo adaeze@example.com" [ref=e216]:
+                  - generic [ref=e217]:
+                    - generic [ref=e218]: AO
+                    - generic [ref=e219]:
+                      - button "Adaeze Okonkwo" [ref=e220] [cursor=pointer]
+                      - generic [ref=e221]: adaeze@example.com
+                - cell "STU-2026-001" [ref=e222]
+                - cell "English Physics Chemistry Mathematics" [ref=e223]:
+                  - generic [ref=e224]:
+                    - generic "Compulsory JAMB Subject" [ref=e225]: English
+                    - generic [ref=e226]: Physics
+                    - generic [ref=e227]: Chemistry
+                    - generic [ref=e228]: Mathematics
+                - cell "Free Trial" [ref=e229]
+                - cell "Active" [ref=e231]
+                - cell "2026-10-02" [ref=e234]
+                - cell "2026-10-24" [ref=e235]
+                - cell [ref=e236]:
+                  - generic [ref=e237]:
+                    - button "View Profile" [ref=e238] [cursor=pointer]
+                    - button "Edit profile" [ref=e239] [cursor=pointer]
+                    - button "Suspend student account" [ref=e242] [cursor=pointer]
+                    - button "Archive student" [ref=e245] [cursor=pointer]
+              - row [ref=e249]:
+                - cell "CB Chinedu Bello chinedu@example.com" [ref=e250]:
+                  - generic [ref=e251]:
+                    - generic [ref=e252]: CB
+                    - generic [ref=e253]:
+                      - button "Chinedu Bello" [ref=e254] [cursor=pointer]
+                      - generic [ref=e255]: chinedu@example.com
+                - cell "STU-2026-002" [ref=e256]
+                - cell "English Physics Mathematics Biology" [ref=e257]:
+                  - generic [ref=e258]:
+                    - generic "Compulsory JAMB Subject" [ref=e259]: English
+                    - generic [ref=e260]: Physics
+                    - generic [ref=e261]: Mathematics
+                    - generic [ref=e262]: Biology
+                - cell "Paid Access" [ref=e263]
+                - cell "Active" [ref=e265]
+                - cell "2026-09-18" [ref=e268]
+                - cell "2026-10-23" [ref=e269]
+                - cell [ref=e270]:
+                  - generic [ref=e271]:
+                    - button "View Profile" [ref=e272] [cursor=pointer]
+                    - button "Edit profile" [ref=e273] [cursor=pointer]
+                    - button "Suspend student account" [ref=e276] [cursor=pointer]
+                    - button "Archive student" [ref=e279] [cursor=pointer]
+              - row [ref=e283]:
+                - cell "FY Fatima Yusuf fatima@example.com" [ref=e284]:
+                  - generic [ref=e285]:
+                    - generic [ref=e286]: FY
+                    - generic [ref=e287]:
+                      - button "Fatima Yusuf" [ref=e288] [cursor=pointer]
+                      - generic [ref=e289]: fatima@example.com
+                - cell "STU-2026-003" [ref=e290]
+                - cell "English Chemistry Biology Mathematics" [ref=e291]:
+                  - generic [ref=e292]:
+                    - generic "Compulsory JAMB Subject" [ref=e293]: English
+                    - generic [ref=e294]: Chemistry
+                    - generic [ref=e295]: Biology
+                    - generic [ref=e296]: Mathematics
+                - cell "Paid Access" [ref=e297]
+                - cell "Active" [ref=e299]
+                - cell "2026-08-30" [ref=e302]
+                - cell "2026-10-20" [ref=e303]
+                - cell [ref=e304]:
+                  - generic [ref=e305]:
+                    - button "View Profile" [ref=e306] [cursor=pointer]
+                    - button "Edit profile" [ref=e307] [cursor=pointer]
+                    - button "Suspend student account" [ref=e310] [cursor=pointer]
+                    - button "Archive student" [ref=e313] [cursor=pointer]
+          - generic [ref=e317]:
+            - generic [ref=e318]:
+              - text: Showing
+              - strong [ref=e319]: 1–5
+              - text: of
+              - strong [ref=e320]: "5"
+              - text: students
+            - generic [ref=e321]:
+              - button "Previous" [disabled] [ref=e322]
+              - generic [ref=e325]: Page 1 of 1
+              - button "Next" [disabled] [ref=e326]
