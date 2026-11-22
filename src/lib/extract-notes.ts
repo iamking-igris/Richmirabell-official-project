@@ -89,9 +89,17 @@ export async function extractNotesFromImage(
 
     return { ok: true, data: doc };
   } catch (err: any) {
+    const raw = String(err?.message || "");
+    const isNetwork =
+      err instanceof TypeError ||
+      raw.includes("fetch failed") ||
+      raw.includes("Failed to fetch") ||
+      raw.includes("NetworkError");
     return {
       ok: false,
-      message: err?.message || "Couldn't read the note. Please try a clearer photo.",
+      message: isNetwork
+        ? "Could not reach the extraction service. Check that the frontend server is running and try again."
+        : raw || "Couldn't read the note. Please try a clearer photo.",
     };
   }
 }

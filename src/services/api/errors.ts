@@ -15,7 +15,7 @@ export class ApiError extends Error {
 export class ServiceUnavailableError extends ApiError {
   constructor(serviceName: string) {
     super(
-      `The ${serviceName} is not connected to a backend server. Please configure backend services to proceed.`,
+      "We couldn't complete your request right now. Please try again shortly.",
       503,
       "SERVICE_UNAVAILABLE"
     );

@@ -154,10 +154,16 @@ export function StudentSecurityPage() {
 
         <div className="space-y-2 text-xs text-muted leading-relaxed font-sans">
           <p>
-            Password changes are not required in this local browser build. Your session stays logged in on this browser automatically.
+            Your password is validated against the Richmirabel backend. If you forget it, use the{" "}
+            <Link to="/forgot-password" className="font-semibold text-primary hover:underline">
+              Forgot password
+            </Link>{" "}
+            link on the sign-in screen to request a reset. A one-time reset link is sent to your email when
+            delivery is configured.
           </p>
           <p className="text-[11px]">
-            When cloud server authentication is introduced in a future release, password updates, email recovery, and 2-factor authentication will be configurable directly from this panel.
+            Your session token is stored in your browser and sent to the backend on each request. Signing out
+            revokes the current session on the server.
           </p>
         </div>
       </div>

@@ -1,17 +1,17 @@
-import { apiClient } from "../api/client";
+import { billingApi } from "@/lib/backend";
 import type { InitiatePaymentRequest, PaymentTransaction, VerifyPaymentRequest } from "./payments.types";
 
 export class PaymentsService {
-  public async initiatePayment(req: InitiatePaymentRequest): Promise<{ authorizationUrl: string; reference: string }> {
-    return apiClient.post("/payments/initiate", req);
+  public initiatePayment(req: InitiatePaymentRequest) {
+    return billingApi.initPayment(req.planId);
   }
 
-  public async verifyPayment(req: VerifyPaymentRequest): Promise<PaymentTransaction> {
-    return apiClient.post<PaymentTransaction>("/payments/verify", req);
+  public verifyPayment(req: VerifyPaymentRequest) {
+    return billingApi.verifyPayment(req.reference);
   }
 
-  public async getTransactions(): Promise<PaymentTransaction[]> {
-    return apiClient.get<PaymentTransaction[]>("/payments/transactions");
+  public getTransactions(): Promise<PaymentTransaction[]> {
+    return billingApi.transactions() as unknown as Promise<PaymentTransaction[]>;
   }
 }
 

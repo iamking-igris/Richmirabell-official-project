@@ -1,65 +1,74 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { BrandMark } from "@/components/brand";
+import { googleClientId, promptGoogleSignIn } from "@/lib/google";
 import { useSession } from "@/lib/session";
+import { ApiError } from "@/services/api/errors";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
 function Login() {
   const navigate = useNavigate();
-  const enter = useSession((s) => s.enter);
+  const login = useSession((s) => s.login);
+  const loginWithGoogle = useSession((s) => s.loginWithGoogle);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState<"email" | "google" | null>(null);
+
+  async function finish(user: { role: string; onboarding_complete: boolean }) {
+    if (user.role === "ADMIN") {
+      navigate({ to: "/admin" });
+      return;
+    }
+    navigate({ to: user.onboarding_complete ? "/studio" : "/start" });
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper px-4">
       <form
         className="w-full max-w-md rounded-3xl border border-line bg-surface p-8"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           const data = new FormData(e.currentTarget);
           const email = String(data.get("email") || "").trim();
           const password = String(data.get("password") || "");
-          const isEmailAdmin = email.toLowerCase() === "admin@gmail.com" || email.toLowerCase() === "admin";
-          const isPassAdmin = password === (import.meta.env.VITE_ADMIN_PASSCODE || "admin");
-
-          if (isEmailAdmin && isPassAdmin) {
-            if (typeof sessionStorage !== "undefined") {
-              sessionStorage.setItem("richmirabel-admin", "1");
-            }
-            enter("Admin", "admin@gmail.com");
-            navigate({ to: "/admin" });
-            return;
+          setError("");
+          setBusy("email");
+          try {
+            const user = await login(email, password);
+            await finish(user);
+          } catch (err) {
+            setError(err instanceof ApiError ? err.message : "Could not sign in. Try again.");
+          } finally {
+            setBusy(null);
           }
-
-          if (isEmailAdmin && !isPassAdmin) {
-            setError("Incorrect password for admin account.");
-            return;
-          }
-
-          if (!email.includes("@") || password.length < 5) {
-            setError("Check your email and password.");
-            return;
-          }
-          const name = email.split("@")[0] || "Student";
-          enter(name.charAt(0).toUpperCase() + name.slice(1), email);
-          const done = useSession.getState().onboardingComplete;
-          navigate({ to: done ? "/studio" : "/onboarding" });
         }}
       >
         <BrandMark />
         <h1 className="mt-6 font-display text-3xl">Welcome back</h1>
-        <p className="mt-2 text-sm text-muted">Log in to continue your preparation. Access your account across all your devices.</p>
+        <p className="mt-2 text-sm text-muted">
+          Log in to continue your preparation. Your progress is saved to your account.
+        </p>
 
         <button
           type="button"
-          onClick={() => {
-            enter("Google Student", "student.google@gmail.com");
-            const done = useSession.getState().onboardingComplete;
-            navigate({ to: done ? "/studio" : "/onboarding" });
+          disabled={busy !== null}
+          onClick={async () => {
+            setError("");
+            setBusy("google");
+            try {
+              const credential = await promptGoogleSignIn();
+              const user = await loginWithGoogle(credential);
+              await finish(user);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Google sign-in failed.");
+            } finally {
+              setBusy(null);
+            }
           }}
-          className="mt-6 flex min-h-12 w-full items-center justify-center gap-3 border border-line bg-paper px-4 py-3 font-semibold text-ink shadow-xs transition hover:bg-soft focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="mt-6 flex min-h-12 w-full items-center justify-center gap-3 border border-line bg-paper px-4 py-3 font-semibold text-ink shadow-xs transition hover:bg-soft focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+          title={googleClientId() ? "Continue with Google" : "Google sign-in is not configured"}
         >
-          <svg className="size-5" viewBox="0 0 24 24">
+          <svg className="size-5" viewBox="0 0 24 24" aria-hidden="true">
             <path
               fill="#4285F4"
               d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
@@ -77,7 +86,7 @@ function Login() {
               d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.94 1.19 15.23 0 12 0 7.39 0 3.35 2.68 1.36 6.58l3.96 3.15c.94-2.83 3.57-4.98 6.68-4.98z"
             />
           </svg>
-          Continue with Google
+          {busy === "google" ? "Connecting…" : "Continue with Google"}
         </button>
 
         <div className="relative my-6 flex items-center justify-center">
@@ -95,11 +104,11 @@ function Login() {
         <input
           id="email"
           name="email"
-          type="text"
+          type="email"
           required
           autoComplete="email"
           className="mt-1.5 w-full rounded-xl border border-line bg-paper px-3 py-3 outline-none focus:border-primary"
-          placeholder="ada@example.com or admin@gmail.com"
+          placeholder="ada@example.com"
         />
 
         <label className="mt-4 block text-sm font-medium" htmlFor="password">
@@ -115,16 +124,19 @@ function Login() {
           placeholder="Your password"
         />
 
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="mt-3 text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        )}
 
-        <button type="submit" className="mt-6 w-full rounded-full bg-primary py-3 font-semibold text-primary-fg">
-          Log in
+        <button
+          type="submit"
+          disabled={busy !== null}
+          className="mt-6 w-full rounded-full bg-primary py-3 font-semibold text-primary-fg disabled:opacity-60"
+        >
+          {busy === "email" ? "Signing in…" : "Log in"}
         </button>
-
-        <div className="mt-4 rounded-xl border border-line bg-soft/60 px-3.5 py-2.5 text-xs text-muted">
-          <p className="font-semibold text-ink">Demo credentials</p>
-          <p className="mt-0.5">Admin: <span className="font-mono font-medium text-ink">admin@gmail.com</span> · Password: <span className="font-mono font-medium text-ink">admin</span></p>
-        </div>
 
         <p className="mt-4 text-center text-sm text-muted">
           <Link to="/forgot-password" className="text-muted">

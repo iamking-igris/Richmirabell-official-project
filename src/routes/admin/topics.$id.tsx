@@ -9,7 +9,11 @@ import { useNoteStore } from "@/lib/useNoteStore";
 import { extractNotesFromImage } from "@/lib/extract-notes";
 import type { NoteBlock } from "@/lib/note-schema";
 import { TopicQuizOcrWorkspace } from "@/components/question-ocr/TopicQuizOcrWorkspace";
+import { OcrProcessingScreen } from "@/components/OcrProcessingScreen";
 import { getTheoryPartDepth, getTheoryIndentClass } from "@/lib/theory-hierarchy";
+import { contentApi } from "@/lib/backend";
+import { mapTopic, topicToPayload } from "@/lib/mappers";
+import { ApiError } from "@/services/api/errors";
 
 export const Route = createFileRoute("/admin/topics/$id")({ component: Editor });
 
@@ -78,7 +82,65 @@ function docBlocksToCatalogNotes(blocks: NoteBlock[]): { notes: CatalogNoteBlock
 function Editor() {
   const { id } = Route.useParams();
   const subjects = useContent((s) => s.subjects);
+  const loading = useContent((s) => s.loading);
+  const refresh = useContent((s) => s.refresh);
+  const upsert = useContent((s) => s.upsertTopic);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const found = locateTopic(subjects, id);
+
+  // If the topic is not in the local store (e.g. after a browser refresh),
+  // fetch it from the backend and add it to the content store.
+  useEffect(() => {
+    if (found || fetching || loading) return;
+    let cancelled = false;
+    async function fetchTopic() {
+      setFetching(true);
+      setFetchError(null);
+      try {
+        const backendTopic = await contentApi.adminGetTopic(id);
+        const subjectId = backendTopic.subject_id;
+        // Ensure the subject exists in the store so locateTopic can find it.
+        if (!useContent.getState().subjects.some((s) => s.id === subjectId)) {
+          await refresh({ includeDrafts: true });
+        }
+        const mapped = mapTopic(backendTopic, subjectId);
+        upsert(subjectId, mapped);
+      } catch (err) {
+        if (!cancelled) {
+          setFetchError(
+            err instanceof ApiError ? err.message : "Could not load this lesson from the backend.",
+          );
+        }
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    }
+    void fetchTopic();
+    return () => { cancelled = true; };
+  }, [found, fetching, loading, id, refresh, upsert]);
+
+  if (fetching) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-3xl border border-line bg-surface p-12 text-center">
+        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <p className="mt-3 text-sm text-muted">Loading lesson from backend…</p>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="rounded-3xl border border-dashed border-line bg-surface p-12 text-center">
+        <p className="font-display text-xl text-ink">Could not load this lesson</p>
+        <p className="mt-1 text-sm text-muted">{fetchError}</p>
+        <Link to="/admin/subjects" className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg">
+          Back to subjects
+        </Link>
+      </div>
+    );
+  }
+
   if (!found) return <p>That topic is not on Richmirabel.</p>;
   return <Form key={id} subject={found.subject} initial={found.topic} />;
 }
@@ -110,9 +172,10 @@ function fileToBase64(file: File): Promise<string> {
 
 function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
   const upsert = useContent((s) => s.upsertTopic);
+  const refresh = useContent((s) => s.refresh);
   const [topic, setTopic] = useState<Topic>(structuredClone(initial));
   const [tab, setTab] = useState<"Details" | "Source" | "Note" | "Questions" | "Preview">("Details");
-  const [sources, setSources] = useState<{ name: string; url: string; type: string; file: File }[]>([]);
+  const [sources, setSources] = useState<{ name: string; url: string; type: string; file?: File }[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -122,6 +185,8 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
   const [dirty, setDirty] = useState(false);
   const [sourceWorkflow, setSourceWorkflow] = useState<"notes" | "questions">("notes");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: "objective" | "theory"; index: number; title: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [backendId, setBackendId] = useState<string | null>(initial.id ?? null);
 
   function handleImportTopicQuestions(imported: { questions: Question[]; theory?: TheoryQuestion[] }) {
     const newQs = imported.questions || [];
@@ -156,6 +221,19 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
       blocks: catalogNotesToDocBlocks(topic.notes, topic.objectives),
     });
   }, [topic.id, subject.name, topic.title, topic.summary, topic.minutes, topic.questions.length, topic.objectives, loadTopic]);
+
+  // Restore source-file previews from the backend when reopening a saved draft.
+  useEffect(() => {
+    const keys = initial.source_keys ?? [];
+    if (keys.length === 0) return;
+    setSources(
+      keys.map((key) => ({
+        name: key.split("/").pop() ?? key,
+        url: `/api/v1/content/assets/${key}`,
+        type: "image/*",
+      })),
+    );
+  }, [initial.source_keys]);
 
   const edit = (patch: Partial<Topic>) => { setTopic((t) => ({ ...t, ...patch })); setDirty(true); setMsg(null); };
   const move = <T,>(list: T[], i: number, d: number) => { const n = [...list]; const j = i + d; if (j < 0 || j >= n.length) return n; [n[i], n[j]] = [n[j], n[i]]; return n; };
@@ -205,7 +283,11 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
     }
   }
 
-  function save(status: "published" | "draft") {
+  async function save(status: "published" | "draft") {
+    if (saving) return;
+    setSaving(true);
+    setMsg(null);
+
     // Sync current doc from Zustand into catalog topic
     const { notes: syncedNotes, objectives: syncedObjectives } = docBlocksToCatalogNotes(doc.blocks);
     const next: Topic = {
@@ -217,11 +299,82 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
       status,
     };
     const err = validate(next);
-    if (err) { setMsg({ ok: false, text: err }); return; }
-    upsert(subject.id, next);
-    setTopic(next);
-    setDirty(false);
-    setMsg({ ok: true, text: status === "published" ? "Published." : "Saved." });
+    if (err) {
+      setMsg({ ok: false, text: err });
+      setSaving(false);
+      return;
+    }
+
+    try {
+      // 1. Upload new source files to the backend and collect their keys.
+      //    Restored sources (no File object) are already persisted and their keys
+      //    are carried over from the original save.
+      const existingKeys = initial.source_keys ?? [];
+      const newKeys: string[] = [];
+      for (const source of sources) {
+        if (!source.file) continue; // restored source, already persisted
+        try {
+          const asset = await contentApi.uploadAsset(source.file, backendId ?? undefined);
+          newKeys.push(asset.key);
+        } catch (assetErr) {
+          console.warn("Asset upload failed:", assetErr);
+          // Continue saving the lesson even if one asset fails.
+        }
+      }
+      const sourceKeys = [...existingKeys, ...newKeys];
+
+      // 2. Build the backend payload with the complete workspace.
+      const payload = topicToPayload(next, subject.id, sourceKeys);
+      // Preserve the NoteDocument body from the Zustand store so blocks survive round-trip.
+      payload.body = {
+        subject: doc.subject || subject.name,
+        topic: doc.topic || topic.title.toUpperCase(),
+        title: doc.title || topic.title,
+        subtitle: doc.subtitle || topic.summary,
+        meta: doc.meta || "",
+        blocks: doc.blocks,
+      };
+      payload.questions = next.questions ?? [];
+      payload.theory = next.theory ?? [];
+      payload.objectives = next.objectives ?? [];
+      payload.learning_objectives = next.objectives ?? [];
+
+      // 3. Persist to the backend (create or update).
+      let saved;
+      if (backendId) {
+        saved = await contentApi.updateTopic(backendId, payload);
+      } else {
+        saved = await contentApi.createTopic(subject.id, payload);
+      }
+
+      // 4. Update local state with the permanent backend ID.
+      const permanentId = saved.id;
+      setBackendId(permanentId);
+      const savedTopic: Topic = {
+        ...next,
+        id: permanentId,
+        status: saved.status === "PUBLISHED" ? "published" : "draft",
+      };
+      setTopic(savedTopic);
+      upsert(subject.id, savedTopic);
+      setDirty(false);
+      setMsg({
+        ok: true,
+        text: status === "published"
+          ? `Published. Lesson ID: ${permanentId}`
+          : `Draft saved. Lesson ID: ${permanentId}`,
+      });
+
+      // 5. Refresh the content store from the backend so the list is authoritative.
+      void refresh({ includeDrafts: true }).catch(() => undefined);
+    } catch (saveErr) {
+      const message = saveErr instanceof ApiError
+        ? saveErr.message
+        : "Could not save the lesson. Your changes are still on this page — try again.";
+      setMsg({ ok: false, text: message });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -332,24 +485,10 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
                 />
 
                 {ocrLoading ? (
-                  <div className="py-6">
-                    {/* Custom Slick Concentric Spinner */}
-                    <div className="relative size-16 mx-auto mb-5">
-                      <div className="absolute inset-0 rounded-full border-4 border-[#1A4D2E]/15" />
-                      <div className="absolute inset-0 rounded-full border-4 border-[#1A4D2E] border-t-transparent animate-spin" />
-                      <div className="absolute inset-2 rounded-full border-2 border-[#1A4D2E]/35 border-b-transparent animate-spin [animation-direction:reverse] [animation-duration:1.4s]" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="size-2 rounded-full bg-[#1A4D2E] animate-pulse" />
-                      </div>
-                    </div>
-
-                    <h3 className="font-serif text-2xl sm:text-3xl text-[#1A4D2E] font-medium tracking-tight">
-                      Gemini is reading the handwriting...
-                    </h3>
-                    <p className="font-sans text-sm text-[#6B6B6B] mt-2 max-w-md mx-auto leading-relaxed">
-                      Analyzing layout, identifying learning objectives and headings, and converting mathematical equations into KaTeX LaTeX...
-                    </p>
-                  </div>
+                  <OcrProcessingScreen
+                    title="Gemini is reading the handwriting..."
+                    description="Analyzing layout, identifying learning objectives and headings, and converting mathematical equations into KaTeX LaTeX..."
+                  />
                 ) : (
                   <div className="py-4">
                     {/* Upload Icon */}
@@ -435,7 +574,9 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
                       </div>
                       <span className="flex gap-2">
                         <button type="button" onClick={() => setPreview(file.url)} className="min-h-9 rounded-full border border-line px-3 text-xs font-medium hover:bg-paper">Preview</button>
-                        <button type="button" onClick={() => handleOcrImageUpload(file.file)} className="min-h-9 rounded-full border border-[#1A4D2E]/30 bg-[#1A4D2E]/10 text-[#1A4D2E] px-3 text-xs font-semibold hover:bg-[#1A4D2E]/20">Re-Extract</button>
+                        {file.file && (
+                          <button type="button" onClick={() => handleOcrImageUpload(file.file!)} className="min-h-9 rounded-full border border-[#1A4D2E]/30 bg-[#1A4D2E]/10 text-[#1A4D2E] px-3 text-xs font-semibold hover:bg-[#1A4D2E]/20">Re-Extract</button>
+                        )}
                         <button type="button" onClick={() => setSources((current) => current.filter((_, k) => k !== i))} className="min-h-9 rounded-full border border-line px-3 text-xs hover:bg-red-50 text-red-600">Remove</button>
                       </span>
                     </li>
@@ -1262,8 +1403,27 @@ function Form({ subject, initial }: { subject: Subject; initial: Topic }) {
 
       {/* Persistent Bottom Bar */}
       <div className="sticky bottom-0 mt-8 flex flex-wrap items-center gap-3 border-t border-line bg-paper/95 py-3 backdrop-blur">
-        <button type="button" onClick={() => save("published")} className="min-h-12 rounded-full bg-primary px-6 font-semibold text-primary-fg">Publish</button>
-        <button type="button" onClick={() => save("draft")} className="min-h-12 rounded-full border border-line bg-surface px-6 font-semibold">Save as draft</button>
+        <button
+          type="button"
+          onClick={() => void save("published")}
+          disabled={saving}
+          className="min-h-12 rounded-full bg-primary px-6 font-semibold text-primary-fg disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Publish"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void save("draft")}
+          disabled={saving}
+          className="min-h-12 rounded-full border border-line bg-surface px-6 font-semibold disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save as draft"}
+        </button>
+        {backendId && (
+          <span className="text-xs text-muted">
+            Lesson ID: <span className="font-mono">{backendId}</span>
+          </span>
+        )}
         <p role="status" aria-live="polite" className={cn("text-sm", msg && !msg.ok && "font-semibold")}>{msg?.text}</p>
       </div>
     </div>

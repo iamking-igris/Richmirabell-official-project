@@ -17,6 +17,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as StartRouteImport } from './routes/start'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAiRouteImport } from './routes/admin/ai'
@@ -26,7 +27,6 @@ import { Route as AdminBriefingsRouteImport } from './routes/admin/briefings'
 import { Route as AdminCbtRouteImport } from './routes/admin/cbt'
 import { Route as AdminImporterRouteImport } from './routes/admin/importer'
 import { Route as AdminNotesRouteImport } from './routes/admin/notes'
-import { Route as AdminPastQuestionsRouteImport } from './routes/admin/past-questions'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminQuestionsRouteImport } from './routes/admin/questions'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
@@ -41,7 +41,6 @@ import { Route as StudioAccountRouteImport } from './routes/studio/account'
 import { Route as StudioCbtRouteImport } from './routes/studio/cbt'
 import { Route as StudioGuidesRouteImport } from './routes/studio/guides'
 import { Route as StudioNewsRouteImport } from './routes/studio/news'
-import { Route as StudioPastQuestionsRouteImport } from './routes/studio/past-questions'
 import { Route as StudioPlanRouteImport } from './routes/studio/plan'
 import { Route as StudioProfileRouteImport } from './routes/studio/profile'
 import { Route as StudioProgressRouteImport } from './routes/studio/progress'
@@ -49,14 +48,15 @@ import { Route as StudioSubjectsRouteImport } from './routes/studio/subjects'
 import { Route as StudioHelpRouteImport } from './routes/studio/help'
 import { Route as StudioSecurityRouteImport } from './routes/studio/security'
 import { Route as AdminTopicsIdRouteImport } from './routes/admin/topics.$id'
+import { Route as AdminCbtExamIdRouteImport } from './routes/admin/cbt.$examId'
 import { Route as AdminSettingsCategoryRouteImport } from './routes/admin/settings.$category'
 import { Route as StudioCbtJambRouteImport } from './routes/studio/cbt.jamb'
 import { Route as StudioCbtWeeklyExamIdRouteImport } from './routes/studio/cbt.weekly.$examId'
 import { Route as StudioPracticeIdRouteImport } from './routes/studio/practice.$id'
 import { Route as StudioReviewAttemptIdRouteImport } from './routes/studio/review.$attemptId'
+import { Route as StudioPerformanceAttemptIdRouteImport } from './routes/studio/performance.$attemptId'
 import { Route as StudioSubjectIdRouteImport } from './routes/studio/subject.$id'
 import { Route as StudioTopicIdRouteImport } from './routes/studio/topic.$id'
-import { Route as StudioCbtWaecPaperIdRouteImport } from './routes/studio/cbt.waec.$paperId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -98,6 +98,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StartRoute = StartRouteImport.update({
+  id: '/start',
+  path: '/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudioRoute = StudioRouteImport.update({
   id: '/studio',
   path: '/studio',
@@ -133,6 +138,11 @@ const AdminCbtRoute = AdminCbtRouteImport.update({
   path: '/cbt',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCbtExamIdRoute = AdminCbtExamIdRouteImport.update({
+  id: '/$examId',
+  path: '/$examId',
+  getParentRoute: () => AdminCbtRoute,
+} as any)
 const AdminImporterRoute = AdminImporterRouteImport.update({
   id: '/importer',
   path: '/importer',
@@ -141,11 +151,6 @@ const AdminImporterRoute = AdminImporterRouteImport.update({
 const AdminNotesRoute = AdminNotesRouteImport.update({
   id: '/notes',
   path: '/notes',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPastQuestionsRoute = AdminPastQuestionsRouteImport.update({
-  id: '/past-questions',
-  path: '/past-questions',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
@@ -218,11 +223,6 @@ const StudioNewsRoute = StudioNewsRouteImport.update({
   path: '/news',
   getParentRoute: () => StudioRoute,
 } as any)
-const StudioPastQuestionsRoute = StudioPastQuestionsRouteImport.update({
-  id: '/past-questions',
-  path: '/past-questions',
-  getParentRoute: () => StudioRoute,
-} as any)
 const StudioPlanRoute = StudioPlanRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -283,6 +283,11 @@ const StudioReviewAttemptIdRoute = StudioReviewAttemptIdRouteImport.update({
   path: '/review/$attemptId',
   getParentRoute: () => StudioRoute,
 } as any)
+const StudioPerformanceAttemptIdRoute = StudioPerformanceAttemptIdRouteImport.update({
+  id: '/performance/$attemptId',
+  path: '/performance/$attemptId',
+  getParentRoute: () => StudioRoute,
+} as any)
 const StudioSubjectIdRoute = StudioSubjectIdRouteImport.update({
   id: '/subject/$id',
   path: '/subject/$id',
@@ -292,11 +297,6 @@ const StudioTopicIdRoute = StudioTopicIdRouteImport.update({
   id: '/topic/$id',
   path: '/topic/$id',
   getParentRoute: () => StudioRoute,
-} as any)
-const StudioCbtWaecPaperIdRoute = StudioCbtWaecPaperIdRouteImport.update({
-  id: '/waec/$paperId',
-  path: '/waec/$paperId',
-  getParentRoute: () => StudioCbtRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -308,15 +308,16 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
+  '/start': typeof StartRoute
   '/studio': typeof StudioRouteWithChildren
   '/admin/ai': typeof AdminAiRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
-  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/cbt': typeof AdminCbtRouteWithChildren
+  '/admin/cbt/$examId': typeof AdminCbtExamIdRoute
   '/admin/importer': typeof AdminImporterRoute
   '/admin/notes': typeof AdminNotesRoute
-  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -330,7 +331,6 @@ export interface FileRoutesByFullPath {
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
-  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
@@ -345,9 +345,9 @@ export interface FileRoutesByFullPath {
   '/studio/cbt/weekly/$examId': typeof StudioCbtWeeklyExamIdRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
+  '/studio/performance/$attemptId': typeof StudioPerformanceAttemptIdRoute
   '/studio/subject/$id': typeof StudioSubjectIdRoute
   '/studio/topic/$id': typeof StudioTopicIdRoute
-  '/studio/cbt/waec/$paperId': typeof StudioCbtWaecPaperIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -357,14 +357,15 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
+  '/start': typeof StartRoute
   '/admin/ai': typeof AdminAiRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
-  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/cbt': typeof AdminCbtRouteWithChildren
+  '/admin/cbt/$examId': typeof AdminCbtExamIdRoute
   '/admin/importer': typeof AdminImporterRoute
   '/admin/notes': typeof AdminNotesRoute
-  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -378,7 +379,6 @@ export interface FileRoutesByTo {
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
-  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
@@ -392,9 +392,9 @@ export interface FileRoutesByTo {
   '/studio/cbt/jamb': typeof StudioCbtJambRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
+  '/studio/performance/$attemptId': typeof StudioPerformanceAttemptIdRoute
   '/studio/subject/$id': typeof StudioSubjectIdRoute
   '/studio/topic/$id': typeof StudioTopicIdRoute
-  '/studio/cbt/waec/$paperId': typeof StudioCbtWaecPaperIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -406,15 +406,16 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
+  '/start': typeof StartRoute
   '/studio': typeof StudioRouteWithChildren
   '/admin/ai': typeof AdminAiRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/briefings': typeof AdminBriefingsRoute
-  '/admin/cbt': typeof AdminCbtRoute
+  '/admin/cbt': typeof AdminCbtRouteWithChildren
+  '/admin/cbt/$examId': typeof AdminCbtExamIdRoute
   '/admin/importer': typeof AdminImporterRoute
   '/admin/notes': typeof AdminNotesRoute
-  '/admin/past-questions': typeof AdminPastQuestionsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/settings': typeof AdminSettingsRoute
@@ -428,7 +429,6 @@ export interface FileRoutesById {
   '/studio/cbt': typeof StudioCbtRouteWithChildren
   '/studio/guides': typeof StudioGuidesRoute
   '/studio/news': typeof StudioNewsRoute
-  '/studio/past-questions': typeof StudioPastQuestionsRoute
   '/studio/plan': typeof StudioPlanRoute
   '/studio/profile': typeof StudioProfileRoute
   '/studio/progress': typeof StudioProgressRoute
@@ -442,9 +442,9 @@ export interface FileRoutesById {
   '/studio/cbt/jamb': typeof StudioCbtJambRoute
   '/studio/practice/$id': typeof StudioPracticeIdRoute
   '/studio/review/$attemptId': typeof StudioReviewAttemptIdRoute
+  '/studio/performance/$attemptId': typeof StudioPerformanceAttemptIdRoute
   '/studio/subject/$id': typeof StudioSubjectIdRoute
   '/studio/topic/$id': typeof StudioTopicIdRoute
-  '/studio/cbt/waec/$paperId': typeof StudioCbtWaecPaperIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -457,15 +457,16 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/signup'
+    | '/start'
     | '/studio'
     | '/admin/ai'
     | '/admin/analytics'
     | '/admin/audit'
     | '/admin/briefings'
     | '/admin/cbt'
+    | '/admin/cbt/$examId'
     | '/admin/importer'
     | '/admin/notes'
-    | '/admin/past-questions'
     | '/admin/payments'
     | '/admin/questions'
     | '/admin/settings'
@@ -479,7 +480,6 @@ export interface FileRouteTypes {
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
-    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -490,9 +490,9 @@ export interface FileRouteTypes {
     | '/studio/cbt/jamb'
     | '/studio/practice/$id'
     | '/studio/review/$attemptId'
+    | '/studio/performance/$attemptId'
     | '/studio/subject/$id'
     | '/studio/topic/$id'
-    | '/studio/cbt/waec/$paperId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -502,14 +502,15 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/signup'
+    | '/start'
     | '/admin/ai'
     | '/admin/analytics'
     | '/admin/audit'
     | '/admin/briefings'
     | '/admin/cbt'
+    | '/admin/cbt/$examId'
     | '/admin/importer'
     | '/admin/notes'
-    | '/admin/past-questions'
     | '/admin/payments'
     | '/admin/questions'
     | '/admin/settings'
@@ -523,7 +524,6 @@ export interface FileRouteTypes {
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
-    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -534,9 +534,9 @@ export interface FileRouteTypes {
     | '/studio/cbt/jamb'
     | '/studio/practice/$id'
     | '/studio/review/$attemptId'
+    | '/studio/performance/$attemptId'
     | '/studio/subject/$id'
     | '/studio/topic/$id'
-    | '/studio/cbt/waec/$paperId'
     | '/studio/cbt/weekly/$examId'
   id:
     | '__root__'
@@ -548,15 +548,16 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/signup'
+    | '/start'
     | '/studio'
     | '/admin/ai'
     | '/admin/analytics'
     | '/admin/audit'
     | '/admin/briefings'
     | '/admin/cbt'
+    | '/admin/cbt/$examId'
     | '/admin/importer'
     | '/admin/notes'
-    | '/admin/past-questions'
     | '/admin/payments'
     | '/admin/questions'
     | '/admin/settings'
@@ -570,7 +571,6 @@ export interface FileRouteTypes {
     | '/studio/cbt'
     | '/studio/guides'
     | '/studio/news'
-    | '/studio/past-questions'
     | '/studio/plan'
     | '/studio/profile'
     | '/studio/progress'
@@ -581,9 +581,9 @@ export interface FileRouteTypes {
     | '/studio/cbt/jamb'
     | '/studio/practice/$id'
     | '/studio/review/$attemptId'
+    | '/studio/performance/$attemptId'
     | '/studio/subject/$id'
     | '/studio/topic/$id'
-    | '/studio/cbt/waec/$paperId'
     | '/studio/cbt/weekly/$examId'
   fileRoutesById: FileRoutesById
 }
@@ -596,6 +596,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   SignupRoute: typeof SignupRoute
+  StartRoute: typeof StartRoute
   StudioRoute: typeof StudioRouteWithChildren
 }
 
@@ -657,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/start': {
+      id: '/start'
+      path: '/start'
+      fullPath: '/start'
+      preLoaderRoute: typeof StartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/studio': {
       id: '/studio'
       path: '/studio'
@@ -706,6 +714,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCbtRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/cbt/$examId': {
+      id: '/admin/cbt/$examId'
+      path: '/$examId'
+      fullPath: '/admin/cbt/$examId'
+      preLoaderRoute: typeof AdminCbtExamIdRouteImport
+      parentRoute: typeof AdminCbtRoute
+    }
     '/admin/importer': {
       id: '/admin/importer'
       path: '/importer'
@@ -718,13 +733,6 @@ declare module '@tanstack/react-router' {
       path: '/notes'
       fullPath: '/admin/notes'
       preLoaderRoute: typeof AdminNotesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/past-questions': {
-      id: '/admin/past-questions'
-      path: '/past-questions'
-      fullPath: '/admin/past-questions'
-      preLoaderRoute: typeof AdminPastQuestionsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/payments': {
@@ -825,13 +833,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioNewsRouteImport
       parentRoute: typeof StudioRoute
     }
-    '/studio/past-questions': {
-      id: '/studio/past-questions'
-      path: '/past-questions'
-      fullPath: '/studio/past-questions'
-      preLoaderRoute: typeof StudioPastQuestionsRouteImport
-      parentRoute: typeof StudioRoute
-    }
     '/studio/plan': {
       id: '/studio/plan'
       path: '/plan'
@@ -916,6 +917,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioReviewAttemptIdRouteImport
       parentRoute: typeof StudioRoute
     }
+    '/studio/performance/$attemptId': {
+      id: '/studio/performance/$attemptId'
+      path: '/performance/$attemptId'
+      fullPath: '/studio/performance/$attemptId'
+      preLoaderRoute: typeof StudioPerformanceAttemptIdRouteImport
+      parentRoute: typeof StudioRoute
+    }
     '/studio/subject/$id': {
       id: '/studio/subject/$id'
       path: '/subject/$id'
@@ -929,13 +937,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/studio/topic/$id'
       preLoaderRoute: typeof StudioTopicIdRouteImport
       parentRoute: typeof StudioRoute
-    }
-    '/studio/cbt/waec/$paperId': {
-      id: '/studio/cbt/waec/$paperId'
-      path: '/waec/$paperId'
-      fullPath: '/studio/cbt/waec/$paperId'
-      preLoaderRoute: typeof StudioCbtWaecPaperIdRouteImport
-      parentRoute: typeof StudioCbtRoute
     }
   }
 }
@@ -964,15 +965,24 @@ const AdminSettingsRouteWithChildren = AdminSettingsRoute._addFileChildren(
   AdminSettingsRouteChildren,
 )
 
+interface AdminCbtRouteChildren {
+  AdminCbtExamIdRoute: typeof AdminCbtExamIdRoute
+}
+
+const AdminCbtRouteChildren: AdminCbtRouteChildren = {
+  AdminCbtExamIdRoute: AdminCbtExamIdRoute,
+}
+
+const AdminCbtRouteWithChildren = AdminCbtRoute._addFileChildren(AdminCbtRouteChildren)
+
 interface AdminRouteChildren {
   AdminAiRoute: typeof AdminAiRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminAuditRoute: typeof AdminAuditRoute
   AdminBriefingsRoute: typeof AdminBriefingsRoute
-  AdminCbtRoute: typeof AdminCbtRoute
+  AdminCbtRoute: typeof AdminCbtRouteWithChildren
   AdminImporterRoute: typeof AdminImporterRoute
   AdminNotesRoute: typeof AdminNotesRoute
-  AdminPastQuestionsRoute: typeof AdminPastQuestionsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminQuestionsRoute: typeof AdminQuestionsRoute
   AdminSettingsRoute: typeof AdminSettingsRouteWithChildren
@@ -990,10 +1000,9 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminAuditRoute: AdminAuditRoute,
   AdminBriefingsRoute: AdminBriefingsRoute,
-  AdminCbtRoute: AdminCbtRoute,
+  AdminCbtRoute: AdminCbtRouteWithChildren,
   AdminImporterRoute: AdminImporterRoute,
   AdminNotesRoute: AdminNotesRoute,
-  AdminPastQuestionsRoute: AdminPastQuestionsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminQuestionsRoute: AdminQuestionsRoute,
   AdminSettingsRoute: AdminSettingsRouteWithChildren,
@@ -1011,13 +1020,11 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface StudioCbtRouteChildren {
   StudioCbtJambRoute: typeof StudioCbtJambRoute
   StudioCbtWeeklyExamIdRoute: typeof StudioCbtWeeklyExamIdRoute
-  StudioCbtWaecPaperIdRoute: typeof StudioCbtWaecPaperIdRoute
 }
 
 const StudioCbtRouteChildren: StudioCbtRouteChildren = {
   StudioCbtJambRoute: StudioCbtJambRoute,
   StudioCbtWeeklyExamIdRoute: StudioCbtWeeklyExamIdRoute,
-  StudioCbtWaecPaperIdRoute: StudioCbtWaecPaperIdRoute,
 }
 
 const StudioCbtRouteWithChildren = StudioCbtRoute._addFileChildren(
@@ -1029,7 +1036,6 @@ interface StudioRouteChildren {
   StudioCbtRoute: typeof StudioCbtRouteWithChildren
   StudioGuidesRoute: typeof StudioGuidesRoute
   StudioNewsRoute: typeof StudioNewsRoute
-  StudioPastQuestionsRoute: typeof StudioPastQuestionsRoute
   StudioPlanRoute: typeof StudioPlanRoute
   StudioProfileRoute: typeof StudioProfileRoute
   StudioProgressRoute: typeof StudioProgressRoute
@@ -1039,6 +1045,7 @@ interface StudioRouteChildren {
   StudioIndexRoute: typeof StudioIndexRoute
   StudioPracticeIdRoute: typeof StudioPracticeIdRoute
   StudioReviewAttemptIdRoute: typeof StudioReviewAttemptIdRoute
+  StudioPerformanceAttemptIdRoute: typeof StudioPerformanceAttemptIdRoute
   StudioSubjectIdRoute: typeof StudioSubjectIdRoute
   StudioTopicIdRoute: typeof StudioTopicIdRoute
 }
@@ -1048,7 +1055,6 @@ const StudioRouteChildren: StudioRouteChildren = {
   StudioCbtRoute: StudioCbtRouteWithChildren,
   StudioGuidesRoute: StudioGuidesRoute,
   StudioNewsRoute: StudioNewsRoute,
-  StudioPastQuestionsRoute: StudioPastQuestionsRoute,
   StudioPlanRoute: StudioPlanRoute,
   StudioProfileRoute: StudioProfileRoute,
   StudioProgressRoute: StudioProgressRoute,
@@ -1058,6 +1064,7 @@ const StudioRouteChildren: StudioRouteChildren = {
   StudioIndexRoute: StudioIndexRoute,
   StudioPracticeIdRoute: StudioPracticeIdRoute,
   StudioReviewAttemptIdRoute: StudioReviewAttemptIdRoute,
+  StudioPerformanceAttemptIdRoute: StudioPerformanceAttemptIdRoute,
   StudioSubjectIdRoute: StudioSubjectIdRoute,
   StudioTopicIdRoute: StudioTopicIdRoute,
 }

@@ -1,4 +1,4 @@
-import { apiClient } from "../api/client";
+import { authApi } from "@/lib/backend";
 import type {
   AuthResponse,
   AuthUser,
@@ -9,36 +9,36 @@ import type {
 } from "./auth.types";
 
 export class AuthService {
-  public async register(data: RegisterRequest): Promise<AuthResponse> {
-    return apiClient.post<AuthResponse>("/auth/register", data);
+  public register(data: RegisterRequest): Promise<AuthResponse> {
+    return authApi.register(data);
   }
 
-  public async login(data: LoginRequest): Promise<AuthResponse> {
-    return apiClient.post<AuthResponse>("/auth/login", data);
+  public login(data: LoginRequest): Promise<AuthResponse> {
+    return authApi.login(data);
   }
 
-  public async loginWithGoogle(): Promise<AuthResponse> {
-    return apiClient.post<AuthResponse>("/auth/google");
+  public loginWithGoogle(idToken: string): Promise<AuthResponse> {
+    return authApi.google(idToken);
   }
 
-  public async logout(): Promise<{ success: boolean }> {
-    return apiClient.post<{ success: boolean }>("/auth/logout");
+  public logout(): Promise<{ ok: boolean }> {
+    return authApi.logout();
   }
 
-  public async getCurrentUser(): Promise<AuthUser> {
-    return apiClient.get<AuthUser>("/auth/me");
+  public getCurrentUser(): Promise<AuthUser> {
+    return authApi.me();
   }
 
-  public async restoreSession(): Promise<AuthResponse> {
-    return apiClient.post<AuthResponse>("/auth/session/restore");
+  public restoreSession(): Promise<AuthResponse> {
+    return authApi.restore();
   }
 
-  public async requestPasswordReset(data: PasswordResetRequest): Promise<{ success: boolean; message: string }> {
-    return apiClient.post<{ success: boolean; message: string }>("/auth/password/reset-request", data);
+  public requestPasswordReset(data: PasswordResetRequest) {
+    return authApi.requestPasswordReset(data.email);
   }
 
-  public async confirmPasswordReset(data: PasswordResetConfirm): Promise<{ success: boolean }> {
-    return apiClient.post<{ success: boolean }>("/auth/password/reset-confirm", data);
+  public confirmPasswordReset(data: PasswordResetConfirm) {
+    return authApi.confirmPasswordReset(data.token, data.newPassword);
   }
 }
 

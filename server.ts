@@ -2,8 +2,20 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import dns from "node:dns";
+import net from "node:net";
 import "dotenv/config";
 import { GoogleGenAI } from "@google/genai";
+
+// Prefer IPv4/stable connect behavior to avoid IPv6-related timeouts in some environments.
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {}
+try {
+  if (typeof net.setDefaultAutoSelectFamily === "function") {
+    net.setDefaultAutoSelectFamily(false);
+  }
+} catch {}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,41 +54,224 @@ CRITICAL RULES:
 
 import fs from "fs";
 
-const PERMANENT_GEMINI_KEY = process.env.GEMINI_API_KEY?.trim();
+// ---------------------------------------------------------------------------
+// Gemini configuration (Admin → Settings → Gemini AI & OCR)
+//
+// The API key, model and temperatures chosen by an administrator are
+// persisted to a small JSON file next to this server so every Gemini-powered
+// route (notes OCR, question OCR, theory marking, attempt review, CBT
+// generation, the weekly relay) shares ONE configuration. Each request reads
+// it fresh, so a saved change takes effect immediately — no restart, no code
+// edits, no duplicate clients. The file is listed in .gitignore and the key
+// is never echoed back to the browser (only a masked hint).
+// ---------------------------------------------------------------------------
+const GEMINI_CONFIG_PATH = path.resolve(__dirname, ".gemini-config.json");
+
+const SUPPORTED_GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+] as const;
+
+const DEFAULT_GEMINI_TEMPERATURES = { ocr: 0.0, review: 0.2, theory: 0.1, cbt: 0.8 };
+
+type GeminiTemperatureCategory = keyof typeof DEFAULT_GEMINI_TEMPERATURES;
+
+type GeminiConfigFile = {
+  apiKey?: string;
+  model?: string;
+  temperatures?: Partial<typeof DEFAULT_GEMINI_TEMPERATURES>;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+function readGeminiConfig(): GeminiConfigFile {
+  try {
+    if (!fs.existsSync(GEMINI_CONFIG_PATH)) return {};
+    const parsed = JSON.parse(fs.readFileSync(GEMINI_CONFIG_PATH, "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as GeminiConfigFile) : {};
+  } catch {
+    // Unreadable/corrupt file: behave like "no saved configuration".
+    return {};
+  }
+}
+
+function writeGeminiConfig(patch: Partial<GeminiConfigFile>, updatedBy?: string): GeminiConfigFile {
+  const current = readGeminiConfig();
+  const next: GeminiConfigFile = { ...current, ...patch };
+  if (updatedBy) next.updatedBy = updatedBy;
+  next.updatedAt = new Date().toISOString();
+  // Atomic replace so a concurrent request never reads a half-written file.
+  const tmp = `${GEMINI_CONFIG_PATH}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, GEMINI_CONFIG_PATH);
+  return next;
+}
+
+function isUsableGeminiKey(key: unknown): key is string {
+  if (typeof key !== "string") return false;
+  const trimmed = key.trim().replace(/^["']|["']$/g, "");
+  return trimmed.length > 0 && trimmed !== "MY_GEMINI_API_KEY";
+}
+
+type GeminiKeySource = "saved" | "environment" | "none";
+
+/** Resolve the active key and where it comes from (never the raw value). */
+function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource } {
+  const saved = readGeminiConfig().apiKey;
+  if (isUsableGeminiKey(saved)) {
+    return { key: saved.trim().replace(/^["']|["']$/g, ""), source: "saved" };
+  }
+
+  const envKey = process.env.GEMINI_API_KEY;
+  if (isUsableGeminiKey(envKey)) {
+    return { key: envKey.trim().replace(/^["']|["']$/g, ""), source: "environment" };
+  }
+
+  return { key: undefined, source: "none" };
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SYSTEM_PROMPT = `You are an expert educational OCR engine for the Richmirabel app. 
+Your job is to look at this handwritten note, understand the layout, and convert it into a structured JSON format.
+
+Use these visual cues to categorize the text:
+1. "title": The largest, most prominent text at the top of the page.
+2. "subtitle": A smaller sentence right below the title explaining what the note is about.
+3. "meta": Any small text at the top indicating time, date, or questions (e.g., "20 mins").
+4. "objectives": If you see a list of goals, learning objectives, OR a list of variable definitions / symbol meanings (e.g., "u = initial velocity", "v = final velocity"), put each item into the "items" array of an "objectives" block.
+5. "heading": Words that are underlined, written larger, or isolated on their own line.
+6. "paragraph": Standard blocks of handwritten text. Always convert inline math symbols and expressions to KaTeX LaTeX notation (e.g., \\mu, F_{12}, \\alpha, \\frac{a}{b}, v_0). When transcribing variable definitions or symbol meanings inside a paragraph, write each variable definition on a new line (e.g. "u = initial velocity\\nv = final velocity\\na = acceleration") so it can be formatted as a structured definition list.
+7. "formula": Any standalone mathematical equation. YOU MUST convert these to clean KaTeX-compatible LaTeX (e.g., s = \\frac{u+v}{2} t, E_k = \\frac{1}{2}mv^2, v = f \\lambda). Do NOT wrap in markdown backticks or dollar signs.
+
+Output MUST strictly match this JSON structure:
+{
+  "subject": "String",
+  "topic": "String",
+  "title": "String",
+  "subtitle": "String",
+  "meta": "String",
+  "blocks": [
+    { "id": "gen-uuid-1", "type": "objectives", "items": ["Goal 1", "u = initial velocity", "v = final velocity"] },
+    { "id": "gen-uuid-2", "type": "heading", "text": "Heading text" },
+    { "id": "gen-uuid-3", "type": "paragraph", "text": "Paragraph text with inline math \\mu and F_{12}" },
+    { "id": "gen-uuid-4", "type": "formula", "latex": "s = \\frac{u+v}{2} t" }
+  ]
+}
+
+CRITICAL RULES:
+1. Generate a random unique string for every "id".
+2. Return ONLY the raw JSON. No markdown formatting, no backticks.
+3. If handwriting is messy, make your best educational guess based on context.`;
+
+import fs from "fs";
+
+// ---------------------------------------------------------------------------
+// Gemini configuration (Admin → Settings → Gemini AI & OCR)
+//
+// The API key, model and temperatures chosen by an administrator are
+// persisted to a small JSON file next to this server so every Gemini-powered
+// route (notes OCR, question OCR, theory marking, attempt review, CBT
+// generation, the weekly relay) shares ONE configuration. Each request reads
+// it fresh, so a saved change takes effect immediately — no restart, no code
+// edits, no duplicate clients. The file is listed in .gitignore and the key
+// is never echoed back to the browser (only a masked hint).
+// ---------------------------------------------------------------------------
+const GEMINI_CONFIG_PATH = path.resolve(__dirname, ".gemini-config.json");
+
+const SUPPORTED_GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+] as const;
+
+const DEFAULT_GEMINI_TEMPERATURES = { ocr: 0.0, review: 0.2, theory: 0.1, cbt: 0.8 };
+
+type GeminiTemperatureCategory = keyof typeof DEFAULT_GEMINI_TEMPERATURES;
+
+type GeminiConfigFile = {
+  apiKey?: string;
+  model?: string;
+  temperatures?: Partial<typeof DEFAULT_GEMINI_TEMPERATURES>;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+function readGeminiConfig(): GeminiConfigFile {
+  try {
+    if (!fs.existsSync(GEMINI_CONFIG_PATH)) return {};
+    const parsed = JSON.parse(fs.readFileSync(GEMINI_CONFIG_PATH, "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as GeminiConfigFile) : {};
+  } catch {
+    // Unreadable/corrupt file: behave like "no saved configuration".
+    return {};
+  }
+}
+
+function writeGeminiConfig(patch: Partial<GeminiConfigFile>, updatedBy?: string): GeminiConfigFile {
+  const current = readGeminiConfig();
+  const next: GeminiConfigFile = { ...current, ...patch };
+  if (updatedBy) next.updatedBy = updatedBy;
+  next.updatedAt = new Date().toISOString();
+  // Atomic replace so a concurrent request never reads a half-written file.
+  const tmp = `${GEMINI_CONFIG_PATH}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, GEMINI_CONFIG_PATH);
+  return next;
+}
+
+function isUsableGeminiKey(key: unknown): key is string {
+  if (typeof key !== "string") return false;
+  const trimmed = key.trim().replace(/^["']|["']$/g, "");
+  return trimmed.length > 0 && trimmed !== "MY_GEMINI_API_KEY";
+}
+
+type GeminiKeySource = "saved" | "environment" | "none";
+
+/** Resolve the active key and where it comes from (never the raw value). */
+function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource } {
+  const saved = readGeminiConfig().apiKey;
+  if (isUsableGeminiKey(saved)) {
+    return { key: saved.trim().replace(/^["']|["']$/g, ""), source: "saved" };
+  }
+
+  const envKey = process.env.GEMINI_API_KEY;
+  if (isUsableGeminiKey(envKey)) {
+    return { key: envKey.trim().replace(/^["']|["']$/g, ""), source: "environment" };
+  }
+
+  return { key: undefined, source: "none" };
+}
 
 function getGeminiApiKey(): string | undefined {
-  const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (envKey && envKey !== "MY_GEMINI_API_KEY" && !envKey.startsWith("AQ.Ab8RN6J8") && envKey.trim().length > 0) {
-    return envKey.trim().replace(/^["']|["']$/g, "");
-  }
+  return resolveGeminiKey().key;
+}
 
-  const candidatePaths = [
-    path.resolve(__dirname, ".env"),
-    path.resolve(__dirname, ".dev.env.json"),
-    path.resolve(__dirname, "../.dev.env.json"),
-    "/app/.dev.env.json",
-  ];
-  for (const p of candidatePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        if (p.endsWith(".env")) {
-          const content = fs.readFileSync(p, "utf8");
-          const m = content.match(/GEMINI_API_KEY=["']?([^"'\r\n]+)/);
-          if (m && m[1] && !m[1].startsWith("AQ.Ab8RN6J8") && m[1].trim().length > 0) {
-            return m[1].trim();
-          }
-        } else {
-          const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
-          const key = parsed.GEMINI_API_KEY || parsed.GOOGLE_API_KEY;
-          if (key && key !== "MY_GEMINI_API_KEY" && typeof key === "string" && !key.startsWith("AQ.Ab8RN6J8") && key.trim().length > 0) {
-            return key.trim().replace(/^["']|["']$/g, "");
-          }
-        }
-      }
-    } catch {}
+/** Active model: admin choice → server env → default. Shared by all routes. */
+function getGeminiModel(): string {
+  const saved = readGeminiConfig().model;
+  if (saved && (SUPPORTED_GEMINI_MODELS as readonly string[]).includes(saved)) {
+    return saved;
   }
+  const envModel = (process.env.GEMINI_MODEL || "").trim();
+  if (envModel) return envModel;
+  return "gemini-2.5-flash";
+}
 
-  return PERMANENT_GEMINI_KEY;
+function getGeminiTemperatures(): typeof DEFAULT_GEMINI_TEMPERATURES {
+  return { ...DEFAULT_GEMINI_TEMPERATURES, ...(readGeminiConfig().temperatures || {}) };
+}
+
+function maskGeminiKey(key: string | undefined): string {
+  if (!key) return "";
+  if (key.length <= 8) return "•".repeat(key.length);
+  return `${"•".repeat(8)}${key.slice(-4)}`;
 }
 
 async function startServer() {
@@ -113,7 +308,7 @@ async function startServer() {
 
       const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
       const cleanMimeType = mimeType || "image/jpeg";
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const model = getGeminiModel();
 
       let response: any;
       try {
@@ -136,7 +331,7 @@ async function startServer() {
           ],
           config: {
             systemInstruction: SYSTEM_PROMPT,
-            temperature: 0.0,
+            temperature: temperatureFor("ocr"),
             responseMimeType: "application/json",
           },
         });
@@ -162,7 +357,7 @@ async function startServer() {
             ],
             config: {
               systemInstruction: SYSTEM_PROMPT,
-              temperature: 0.0,
+              temperature: temperatureFor("ocr"),
               responseMimeType: "application/json",
             },
           });
@@ -219,7 +414,22 @@ async function startServer() {
         }
       } catch {}
 
-      if (
+      const isNetworkFailure =
+        rawText.includes("fetch failed") ||
+        rawText.includes("ETIMEDOUT") ||
+        rawText.includes("ENOTFOUND") ||
+        rawText.includes("ECONNREFUSED") ||
+        rawText.includes("ECONNRESET") ||
+        err?.cause?.code === "ETIMEDOUT" ||
+        err?.cause?.code === "ENOTFOUND" ||
+        err?.cause?.code === "ECONNREFUSED" ||
+        err?.cause?.code === "ECONNRESET" ||
+        err?.name === "AggregateError";
+
+      if (isNetworkFailure) {
+        cleanMessage =
+          "Could not reach the AI extraction service. Check the server's internet connection and that it can access the Gemini API (generativelanguage.googleapis.com), then try again.";
+      } else if (
         status === 401 ||
         googleReason === "ACCESS_TOKEN_TYPE_UNSUPPORTED" ||
         googleReason === "API_KEY_INVALID" ||
@@ -337,6 +547,80 @@ Return ONLY a JSON object with this exact structure:
   ]
 }`;
 
+  function geminiErrorMessage(err: any, fallback: string): { status: number; message: string } {
+    const status = err?.status || err?.statusCode || 500;
+    const rawText = String(err?.message || "");
+    let googleReason = "";
+    let googleMessage = "";
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*"error"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsedErr = JSON.parse(jsonMatch[0]);
+        googleReason = parsedErr?.error?.details?.[0]?.reason || "";
+        googleMessage = typeof parsedErr?.error?.message === "string" ? parsedErr.error.message : "";
+      }
+    } catch {}
+
+    const isNetworkFailure =
+      rawText.includes("fetch failed") ||
+      rawText.includes("ETIMEDOUT") ||
+      rawText.includes("ENOTFOUND") ||
+      rawText.includes("ECONNREFUSED") ||
+      rawText.includes("ECONNRESET") ||
+      err?.cause?.code === "ETIMEDOUT" ||
+      err?.cause?.code === "ENOTFOUND" ||
+      err?.cause?.code === "ECONNREFUSED" ||
+      err?.cause?.code === "ECONNRESET" ||
+      err?.name === "AggregateError";
+
+    if (isNetworkFailure) {
+      return {
+        status: 503,
+        message:
+          "Could not reach the AI extraction service. Check the server's internet connection and that it can access the Gemini API (generativelanguage.googleapis.com), then try again.",
+      };
+    }
+    if (
+      status === 401 ||
+      googleReason === "ACCESS_TOKEN_TYPE_UNSUPPORTED" ||
+      googleReason === "API_KEY_INVALID" ||
+      rawText.includes("401") ||
+      rawText.includes("UNAUTHENTICATED") ||
+      rawText.includes("API key not valid")
+    ) {
+      return {
+        status: 401,
+        message:
+          "Authentication error: The configured Gemini API key is invalid or unauthorized. Please verify GEMINI_API_KEY on the server.",
+      };
+    }
+    if (status === 429 || rawText.includes("RESOURCE_EXHAUSTED") || rawText.includes("429")) {
+      return {
+        status: 429,
+        message: "Quota limit reached: The Gemini API quota has been exceeded. Please try again shortly.",
+      };
+    }
+    if (status === 403 || rawText.includes("PERMISSION_DENIED")) {
+      return {
+        status: 403,
+        message: "Permission denied: The API key does not have access to the Generative Language API or this model.",
+      };
+    }
+    if (status === 503 || rawText.includes("UNAVAILABLE") || rawText.includes("high demand")) {
+      return {
+        status: 503,
+        message:
+          googleMessage ||
+          "The AI extraction model is temporarily unavailable or experiencing high demand. Please try again shortly.",
+      };
+    }
+    if (googleMessage) return { status: status >= 400 && status < 600 ? status : 500, message: googleMessage };
+    if (err?.message && !err.message.includes("{")) {
+      return { status: status >= 400 && status < 600 ? status : 500, message: err.message };
+    }
+    return { status: status >= 400 && status < 600 ? status : 500, message: fallback };
+  }
+
   async function executeGeminiPrompt(promptText: string, fileBase64: string, mimeType: string, userText: string) {
     const apiKey = getGeminiApiKey();
     if (!apiKey) {
@@ -354,11 +638,11 @@ Return ONLY a JSON object with this exact structure:
 
     const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
     const cleanMimeType = mimeType || "image/jpeg";
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const primaryModel = getGeminiModel();
+    const fallbackModel = "gemini-2.0-flash";
 
-    let response: any;
-    try {
-      response = await ai.models.generateContent({
+    async function generate(model: string) {
+      return ai.models.generateContent({
         model,
         contents: [
           {
@@ -377,35 +661,30 @@ Return ONLY a JSON object with this exact structure:
         ],
         config: {
           systemInstruction: promptText,
-          temperature: 0.0,
+          temperature: temperatureFor("ocr"),
           responseMimeType: "application/json",
         },
       });
+    }
+
+    let response: any;
+    try {
+      response = await generate(primaryModel);
     } catch (err: any) {
-      if (err?.status === 404 || String(err?.message).includes("not found")) {
-        response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: [
-            {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: cleanMimeType,
-                    data: cleanBase64,
-                  },
-                },
-                {
-                  text: userText,
-                },
-              ],
-            },
-          ],
-          config: {
-            systemInstruction: promptText,
-            temperature: 0.0,
-            responseMimeType: "application/json",
-          },
-        });
+      const msg = String(err?.message || "");
+      const status = err?.status || err?.statusCode;
+      const shouldFallback =
+        status === 404 ||
+        status === 503 ||
+        msg.includes("not found") ||
+        msg.includes("UNAVAILABLE") ||
+        msg.includes("high demand");
+      if (shouldFallback && fallbackModel !== primaryModel) {
+        try {
+          response = await generate(fallbackModel);
+        } catch {
+          throw err;
+        }
       } else {
         throw err;
       }
@@ -413,7 +692,7 @@ Return ONLY a JSON object with this exact structure:
 
     const text = response?.text?.trim() || "";
     if (!text) {
-      throw new Error("Empty response returned from OCR engine.");
+      throw new Error("The AI extraction service returned an empty response. Try a clearer image.");
     }
 
     try {
@@ -422,9 +701,11 @@ Return ONLY a JSON object with this exact structure:
     } catch {
       const match = text.match(/\{[\s\S]*\}/);
       if (match) {
-        return JSON.parse(match[0]);
+        try {
+          return JSON.parse(match[0]);
+        } catch {}
       }
-      throw new Error("Could not parse structured output from OCR response.");
+      throw new Error("Could not parse structured output from the AI response. Try a clearer, higher-contrast image.");
     }
   }
 
@@ -439,11 +720,11 @@ Return ONLY a JSON object with this exact structure:
       const parsed = await executeGeminiPrompt(
         QUESTIONS_PROMPT,
         fileBase64,
-        mimeType,
+        mimeType || "image/jpeg",
         `Extract and independently solve all examination questions from this question page (${sourceFileName || "question source"}).`
       );
 
-      const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+      const rawQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
       const cleanQuestions = rawQuestions.map((q: any, idx: number) => ({
         id: `q-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
         questionNumber: String(q.questionNumber || idx + 1).trim(),
@@ -478,12 +759,11 @@ Return ONLY a JSON object with this exact structure:
       return res.json({ ok: true, questions: cleanQuestions });
     } catch (err: any) {
       console.error("Extract Questions OCR error:", err);
-      return res.status(500).json({
-        ok: false,
-        message: err?.message?.includes("{")
-          ? "Failed to process question source document with OCR engine."
-          : err?.message || "Error reading question page.",
-      });
+      const { status, message } = geminiErrorMessage(
+        err,
+        "Failed to extract questions from the source document. Try a clearer image."
+      );
+      return res.status(status).json({ ok: false, message });
     }
   });
 
@@ -498,11 +778,11 @@ Return ONLY a JSON object with this exact structure:
       const parsed = await executeGeminiPrompt(
         ANSWERS_PROMPT,
         fileBase64,
-        mimeType,
+        mimeType || "image/jpeg",
         `Extract all answer keys, solutions, and marking guides from this answer page (${sourceFileName || "answer source"}).`
       );
 
-      const rawAnswers = Array.isArray(parsed.answers) ? parsed.answers : [];
+      const rawAnswers = Array.isArray(parsed?.answers) ? parsed.answers : [];
       const cleanAnswers = rawAnswers.map((a: any, idx: number) => ({
         id: `ans-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
         questionNumber: String(a.questionNumber || idx + 1).trim(),
@@ -520,12 +800,11 @@ Return ONLY a JSON object with this exact structure:
       return res.json({ ok: true, answers: cleanAnswers });
     } catch (err: any) {
       console.error("Extract Answers OCR error:", err);
-      return res.status(500).json({
-        ok: false,
-        message: err?.message?.includes("{")
-          ? "Failed to process answer key document with OCR engine."
-          : err?.message || "Error reading answer key page.",
-      });
+      const { status, message } = geminiErrorMessage(
+        err,
+        "Failed to extract answers from the source document. Try a clearer image."
+      );
+      return res.status(status).json({ ok: false, message });
     }
   });
 
@@ -613,11 +892,11 @@ Return ONLY a JSON object matching this exact schema:
       const parsed = await executeGeminiPrompt(
         THEORY_PROMPT,
         fileBase64,
-        mimeType,
+        mimeType || "image/jpeg",
         `Extract, preserve subpart hierarchy, recreate any diagrams as clean minimalist SVGs, and independently solve all theory questions from this theory question page (${sourceFileName || "theory source"}).`
       );
 
-      const rawQuestions = Array.isArray(parsed.theoryQuestions) ? parsed.theoryQuestions : [];
+      const rawQuestions = Array.isArray(parsed?.theoryQuestions) ? parsed.theoryQuestions : [];
       const cleanQuestions = rawQuestions.map((q: any, idx: number) => {
         // Extract and clean SVG if returned
         let diagramSvg: string | undefined = undefined;
@@ -683,12 +962,11 @@ Return ONLY a JSON object matching this exact schema:
       return res.json({ ok: true, theoryQuestions: cleanQuestions });
     } catch (err: any) {
       console.error("Extract Theory OCR error:", err);
-      return res.status(500).json({
-        ok: false,
-        message: err?.message?.includes("{")
-          ? "Failed to process theory source document with OCR engine."
-          : err?.message || "Error reading theory question page.",
-      });
+      const { status, message } = geminiErrorMessage(
+        err,
+        "Failed to extract theory questions from the source document. Try a clearer image."
+      );
+      return res.status(status).json({ ok: false, message });
     }
   });
 
@@ -712,7 +990,7 @@ Return ONLY a JSON object matching this exact schema:
       },
     });
 
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const model = getGeminiModel();
     const generatePromise = ai.models.generateContent({
       model,
       contents: userContent,
@@ -834,7 +1112,7 @@ Return ONLY a JSON object matching this schema:
 
       const promptData = {
         examTitle: attempt.title,
-        subject: attempt.subjectLabel || "General",
+        subject: attempt.subjectLabel || attempt.subject_label || "General",
         score: attempt.score,
         total: attempt.total,
         incorrectOrSkippedQuestions: filteredQuestions,
@@ -846,43 +1124,23 @@ Return ONLY a JSON object matching this schema:
         result = await executeGeminiTextPrompt(
           REVIEW_ATTEMPT_PROMPT,
           JSON.stringify(promptData, null, 2),
-          0.2
+          temperatureFor("review")
         );
       } catch (geminiErr: any) {
-        console.warn("Gemini service call failed, generating grounded diagnostic fallback:", geminiErr?.message);
-
-        // Grounded diagnostic generator based strictly on the student's actual incorrect and skipped items
-        const weaknesses = filteredQuestions.map((q: any) => {
-          const isSkipped = String(q.studentAnswer).toLowerCase().includes("skipped");
-          const shortConcept = q.questionText.length > 55
-            ? q.questionText.slice(0, 52).trim() + "..."
-            : q.questionText;
-
-          return {
-            id: q.id,
-            concept: shortConcept,
-            theTrap: isSkipped
-              ? "You skipped this question without attempting an option, leaving marks unearned."
-              : `You chose "${q.studentAnswer}", which is a common misconception distractor that overlooks the fundamental governing definition or formula.`,
-            theReality: String(q.officialExplanation || `The verified answer is "${q.correctAnswer}".`),
-          };
+        console.warn("Gemini review attempt failed:", geminiErr?.message);
+        // Never fabricate diagnostics. The caller shows an unavailable/retry state.
+        return res.status(503).json({
+          ok: false,
+          message:
+            "AI diagnostics are unavailable right now. Your saved attempt is intact — retry in a moment.",
         });
+      }
 
-        const subject = attempt.subjectLabel || "the syllabus";
-        result = {
-          summary: `You showed great effort on this ${subject} paper; reviewing fundamental definitions and specific calculation traps will rapidly elevate your score.`,
-          strengths: [
-            attempt.score > 0
-              ? `Demonstrated confident mastery on ${attempt.score} question(s) answered correctly.`
-              : "Demonstrated strong engagement with challenging exam-standard questions under test conditions.",
-          ],
-          weaknesses,
-          actionPlan: [
-            `Review the official explanations and textbook formulas for the ${weaknesses.length} missed question(s).`,
-            `Practice 3 targeted problems covering "${weaknesses[0]?.concept || "key formulas"}".`,
-            "Re-attempt this topic quiz in CBT mode once you have reviewed the lesson notes.",
-          ],
-        };
+      if (!result || !result.summary) {
+        return res.status(503).json({
+          ok: false,
+          message: "AI diagnostics returned no usable analysis. Retry in a moment.",
+        });
       }
 
       return res.json({ ok: true, review: result });
@@ -931,7 +1189,7 @@ Return ONLY a JSON object matching this schema:
       const promptPayload = {
         studentTypedInputBlock: input || "No answer typed by student.",
         theoryQuestionsToGrade: theoryQuestions.map((q: any) => ({
-          questionLabel: q.questionLabel || q.label || "Theory Question",
+          questionLabel: q.questionLabel || q.label || `Question ${q.questionNumber}`,
           questionText: q.questionText || q.prompt || "",
           maxMarks: q.maxMarks || q.marks || 5,
           markingSchemeOrModelAnswer: q.markingScheme || q.directAnswer || q.modelAnswer || "Follow standard WAEC marking scheme.",
@@ -943,7 +1201,7 @@ Return ONLY a JSON object matching this schema:
         markingData = await executeGeminiTextPrompt(
           THEORY_MARKING_PROMPT,
           JSON.stringify(promptPayload, null, 2),
-          0.1
+          temperatureFor("theory")
         );
       } catch (geminiErr: any) {
         console.warn("Gemini theory marking failed, using grounded examiner fallback:", geminiErr?.message);
@@ -1003,7 +1261,13 @@ Return ONLY a JSON object matching this schema:
     }
   });
 
-  let configuredModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+type TemperatureCategory = GeminiTemperatureCategory;
+
+function temperatureFor(category: TemperatureCategory): number {
+  // Read the persisted administrator choice on every request so a saved
+  // change applies immediately, without restarting this server.
+  return getGeminiTemperatures()[category];
+}
 
   // AI CBT Question Generator Endpoint for Admin Studio
   const CBT_QUESTION_GEN_PROMPT = `You are a Chief Examiner for the Nigerian JAMB UTME examination.
@@ -1051,7 +1315,269 @@ Return ONLY a valid JSON object matching this schema:
   ]
 }`;
 
+  /* ------------------------------------------------------------------ */
+  /* Physics examiner persona + question-type diversity (spec Phases 2–5) */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Subject-aware system prompt. Non-Physics subjects keep the exact
+   * prompt they have always had (their behaviour is unchanged); Physics
+   * additionally receives the examiner persona, the question-type
+   * taxonomy and the anti-calculation-dominance rules.
+   */
+  const PHYSICS_EXAMINER_PROMPT = `PHYSICS EXAMINER PERSONA (Nigerian JAMB UTME):
+You are an experienced Nigerian JAMB UTME Physics examiner, question setter and Physics subject specialist with a strong command of the official JAMB Physics syllabus, its learning objectives, examination style, conceptual expectations and numerical problem-solving requirements.
+- Physics assesses far more than mathematical calculation: candidates must understand physical principles, interpret scientific information, apply laws, reason about phenomena and solve numerical problems.
+- NEVER treat every Physics question as a calculation exercise. A batch dominated by calculation questions is a defective batch.
+
+QUESTION-TYPE TAXONOMY AND NATURAL DIVERSITY:
+Classify every Physics question with a "type" field — exactly one of: "conceptual", "numerical", "experimental", "diagram", "application".
+- "conceptual": definitions and fundamental principles; physical laws and relationships; understanding physical phenomena; distinguishing related concepts; identifying correct scientific statements.
+- "numerical": formula application; calculations with physical quantities; unit conversion; numerical reasoning; multi-step problems where appropriate.
+- "experimental": laboratory apparatus; experimental procedures; observations and conclusions; sources of experimental error; measurement and practical applications.
+- "diagram": interpreting graphs and diagrams, and applying information presented visually. Output is text-only, so describe the graph or diagram completely in words inside the question so it is answerable without an image; never reference a figure that is not actually present in the question text.
+- "application": everyday physical phenomena; practical applications of Physics principles; predicting outcomes; applying scientific concepts to unfamiliar situations.
+These categories are guidance for diversity, not rigid quotas or percentages: the mixture must fit the selected topic, subtopic, syllabus coverage and authentic JAMB examination style (a measurement topic may naturally lean numerical; a waves topic often supports more conceptual and application questions). Still, across a batch: span at least three different types where the topic allows, and numerical/calculation questions must never dominate.
+
+GENERATION RULES (Physics):
+1. Vary question structures and cognitive demands across the batch; never repeat the same formula, principle or problem shape, and never emit several numerical questions with nearly identical structures.
+2. Include meaningful non-calculation questions — conceptual, experimental, application and diagram questions must be real questions, not calculations in disguise.
+3. Use realistic JAMB-style multiple-choice wording; exactly four plausible options A-D with one correct option; distractors based on common candidate misconceptions.
+4. Provide accurate explanations with the governing law or reasoning. For numerical questions show the working (formula, substitution, result) with correct numbers and correct UNITS; the final answer and every unit must be correct.
+5. Stay strictly within the selected Physics topic and relevant syllabus scope at the stated difficulty; do not reduce quality or difficulty merely to increase diversity.
+6. Distribute the correct answer across A, B, C and D; never default to one key.`;
+
+  const cbtSystemPrompt = (subject: string): string =>
+    subject.trim().toLowerCase() === "physics"
+      ? `${CBT_QUESTION_GEN_PROMPT}\n\n${PHYSICS_EXAMINER_PROMPT}`
+      : CBT_QUESTION_GEN_PROMPT;
+
+  const PHYSICS_QUESTION_TYPES = [
+    "conceptual",
+    "numerical",
+    "experimental",
+    "diagram",
+    "application",
+  ] as const;
+  type PhysicsQuestionType = (typeof PHYSICS_QUESTION_TYPES)[number] | "unclassified";
+
+  function parseQuestionType(raw: any): PhysicsQuestionType {
+    const value = String(raw?.type ?? "").trim().toLowerCase();
+    // Only the model's own classification (validated against the enum) is
+    // trusted — never guess a type from the presence of numbers.
+    return (PHYSICS_QUESTION_TYPES as readonly string[]).includes(value)
+      ? (value as PhysicsQuestionType)
+      : "unclassified";
+  }
+
+  /** Normalised form used for duplicate detection inside one batch. */
+  const normalizeForDup = (text: string): string =>
+    text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  type DiversityAssessment = {
+    byType: Record<PhysicsQuestionType, number>;
+    issues: string[];
+    nonNumericalFloor: number;
+  };
+
+  /**
+   * Batch-level diversity gate (Phase 5). Thresholds are floors, not
+   * quotas: a numerical share above half the batch, too few
+   * non-numerical questions, too few distinct types, or missing type
+   * labels all mark the batch as needing a targeted repair.
+   */
+  function assessPhysicsDiversity(
+    questions: RelayQuestion[],
+    count: number,
+  ): DiversityAssessment {
+    const byType: Record<PhysicsQuestionType, number> = {
+      conceptual: 0,
+      numerical: 0,
+      experimental: 0,
+      diagram: 0,
+      application: 0,
+      unclassified: 0,
+    };
+    for (const question of questions) {
+      const key = (question.type || "unclassified") as PhysicsQuestionType;
+      byType[key] = (byType[key] ?? 0) + 1;
+    }
+    const issues: string[] = [];
+    const nonNumericalFloor = Math.ceil(count * 0.4);
+    const nonNumerical = questions.length - byType.numerical - byType.unclassified;
+    const distinct = PHYSICS_QUESTION_TYPES.filter((type) => byType[type] > 0).length;
+    if (byType.numerical > Math.floor(count / 2)) {
+      issues.push(`numerical questions dominate (${byType.numerical}/${questions.length})`);
+    }
+    if (nonNumerical < nonNumericalFloor) {
+      issues.push(
+        `only ${nonNumerical} non-numerical question(s) (at least ${nonNumericalFloor} expected in a batch of ${count})`,
+      );
+    }
+    if (distinct < Math.min(3, count)) {
+      issues.push(
+        `only ${distinct} distinct question type(s) (at least ${Math.min(3, count)} expected)`,
+      );
+    }
+    if (byType.unclassified > 0) {
+      issues.push(`${byType.unclassified} question(s) are missing a valid "type"`);
+    }
+    return { byType, issues, nonNumericalFloor };
+  }
+
+  /**
+   * A numerical question whose explanation shows no digits and no
+   * formula/working is flagged for the verification pass (it may be an
+   * unsupported or unit-less answer). This is a red flag for repair, not
+   * a claim that the answer is wrong.
+   */
+  function numericalNeedsAttention(question: RelayQuestion): boolean {
+    if (question.type !== "numerical") return false;
+    return !/[0-9]/.test(question.explanation) && !/[=×÷²³√π]/.test(question.explanation);
+  }
+
+  /**
+   * After a repair merge the batch is trimmed back to exactly `count` by
+   * removing questions from the most abundant type first. Drops are
+   * counted and reported in the response — never silent.
+   */
+  function trimToCount(
+    questions: RelayQuestion[],
+    count: number,
+  ): { kept: RelayQuestion[]; dropped: number; droppedFrom: string } {
+    if (questions.length <= count) return { kept: questions, dropped: 0, droppedFrom: "" };
+    const kept = [...questions];
+    let dropped = 0;
+    let droppedFrom = "";
+    while (kept.length > count) {
+      const tally: Record<string, number> = {};
+      for (const question of kept) tally[question.type] = (tally[question.type] ?? 0) + 1;
+      const dominant = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+      const index = kept.map((question) => question.type).lastIndexOf(dominant);
+      kept.splice(index, 1);
+      dropped += 1;
+      droppedFrom = dominant;
+    }
+    return { kept, dropped, droppedFrom };
+  }
+
+  /**
+   * One targeted repair call for a deficient Physics batch (Phase 5):
+   * it generates ONLY the missing question types, re-verifies the
+   * numerical answers/units (or classifies unlabelled questions). The
+   * full batch is never regenerated and valid questions are kept.
+   */
+  async function repairPhysicsBatch(opts: {
+    subject: string;
+    topicFocus: string;
+    difficulty: string;
+    count: number;
+    existing: RelayQuestion[];
+    exclusions: string[];
+    deficitTypes: PhysicsQuestionType[];
+    deficitCount: number;
+    toVerify: RelayQuestion[];
+    toClassify: RelayQuestion[];
+  }): Promise<{
+    added: RelayQuestion[];
+    corrections: Map<string, RelayQuestion>;
+    rejected: number;
+  }> {
+    const sections: string[] = [];
+    sections.push(
+      `A previous batch of ${opts.count} authentic Nigerian JAMB UTME Physics questions` +
+        `${opts.topicFocus ? ` on "${opts.topicFocus}"` : " covering the broad syllabus"}` +
+        ` needs a targeted repair. Do NOT regenerate the batch — produce only what is asked below.`,
+    );
+
+    if (opts.deficitCount > 0 && opts.deficitTypes.length > 0) {
+      sections.push(
+        `PART A — deficient question types: write ${opts.deficitCount} additional Physics ` +
+          `question(s) of type ${opts.deficitTypes.join(", ")}. Each must genuinely belong to ` +
+          `that type (never a calculation in disguise), match difficulty "${opts.difficulty}", ` +
+          `and stay within the syllabus scope.`,
+      );
+    }
+
+    const wantsCorrections = opts.toVerify.length > 0 || opts.toClassify.length > 0;
+    if (opts.toVerify.length > 0) {
+      sections.push(
+        `PART B — verification: the numbered questions below already exist. Verify each one's ` +
+          `final answer, formulae and units. If a question is fully correct, OMIT it from ` +
+          `"corrections". If anything is wrong (wrong value, wrong unit, missing unit, missing ` +
+          `working), return the FULL corrected question under "corrections" with the same ` +
+          `"prompt" text.`,
+      );
+      opts.toVerify.forEach((question, index) => {
+        sections.push(
+          `(${index + 1}) "${question.prompt}" — answer: ${question.answer}; explanation: ${question.explanation.slice(0, 240)}`,
+        );
+      });
+    }
+    if (opts.toClassify.length > 0) {
+      sections.push(
+        `PART C — classification: these questions are missing a valid "type". Return each of ` +
+          `them under "corrections" with the correct "type" added (content unchanged unless it ` +
+          `is actually wrong):`,
+      );
+      opts.toClassify.forEach((question, index) => {
+        sections.push(`(${index + 1}) "${question.prompt}"`);
+      });
+    }
+
+    const seen = [...opts.existing.map((question) => question.prompt), ...opts.exclusions];
+    sections.push(
+      `DO NOT duplicate or re-word any of these existing questions:\n` +
+        seen
+          .map((prompt, index) => `(${index + 1}) "${prompt.replace(/"/g, "'").slice(0, 160)}"`)
+          .join("\n"),
+    );
+
+    sections.push(
+      `Return ONLY a JSON object with this exact shape: ` +
+        `{"questions":[{"prompt":"...","options":{"A":"...","B":"...","C":"...","D":"..."},` +
+        `"answer":"A","explanation":"...","topic":"...","difficulty":"medium","type":"conceptual"}],` +
+        `"corrections":[{"prompt":"<exact original prompt>","options":{"A":"...","B":"...","C":"...","D":"..."},` +
+        `"answer":"A","explanation":"...","topic":"...","difficulty":"medium","type":"numerical"}]}` +
+        (wantsCorrections ? ` — return an empty "corrections" array if none apply.` : ""),
+    );
+
+    const parsed = await executeGeminiTextPrompt(
+      cbtSystemPrompt(opts.subject),
+      sections.join("\n\n"),
+      temperatureFor("cbt"),
+      60000,
+    );
+
+    const rawAdded = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.questions)
+        ? parsed.questions
+        : [];
+    const added: RelayQuestion[] = [];
+    let rejected = 0;
+    for (const entry of rawAdded) {
+      const normalized = normalizeRelayQuestion(entry, opts.subject);
+      if (normalized) added.push(normalized);
+      else rejected += 1;
+    }
+
+    const corrections = new Map<string, RelayQuestion>();
+    const rawCorrections = Array.isArray(parsed?.corrections) ? parsed.corrections : [];
+    for (const entry of rawCorrections) {
+      const normalized = normalizeRelayQuestion(entry, opts.subject);
+      const originalPrompt = String(entry?.prompt ?? "").trim();
+      if (normalized && originalPrompt) {
+        corrections.set(normalizeForDup(originalPrompt), normalized);
+      }
+    }
+    return { added, corrections, rejected };
+  }
+
   app.post("/api/admin/generate-cbt-questions", async (req, res) => {
+    // Admin-only: this route spends Gemini quota.
+    const guardEmail = await adminGuard(req, res);
+    if (guardEmail === null) return;
     try {
       const { subject, topic, count, difficulty, sampleHistory, excludePrompts, batchNonce } = req.body;
       const questionCount = Math.max(1, Math.min(Number(count) || 10, 50));
@@ -1087,14 +1613,15 @@ ${historyContextPrompt}
 DIRECTIVE:
 - Ensure each question has a distinct premise and varied phrasing.
 - It is encouraged to test similar concepts from the syllabus topic, provided each question uses a novel sentence structure, practical scenario, or distinct numerical calculation.
-- Randomize the correct key evenly across A, B, C, and D.`;
+- Randomize the correct key evenly across A, B, C, and D.${subj === "physics" ? `
+- For Physics: vary question types (conceptual, numerical, experimental, diagram, application); numerical/calculation questions must not dominate the batch.` : ""}`;
 
       let generatedData: any;
       try {
         generatedData = await executeGeminiTextPrompt(
-          CBT_QUESTION_GEN_PROMPT,
+          cbtSystemPrompt(subj),
           userInstruction,
-          0.8, // Creative temperature for high linguistic & numerical variety
+          temperatureFor("cbt"), // Creative temperature for high linguistic & numerical variety
           45000 // 45-second timeout allowing full generation of batches
         );
       } catch (geminiErr: any) {
@@ -1455,160 +1982,148 @@ DIRECTIVE:
   });
 
   // Student Attempt Diagnostic Review Endpoint
-  app.post("/api/student/review-attempt", async (req, res) => {
-    try {
-      const { attempt } = req.body;
-      if (!attempt || !Array.isArray(attempt.items)) {
-        return res.status(400).json({ ok: false, message: "Invalid attempt data provided." });
-      }
 
-      const items = attempt.items;
-      const score = Number(attempt.score) || 0;
-      const total = Number(attempt.total) || items.length || 1;
-      const pct = Math.round((score / Math.max(1, total)) * 100);
-
-      const subjectsStats: Record<string, { correct: number; total: number }> = {};
-      const incorrectItems: Array<{ id: string; prompt: string; pick?: string; answer?: string; explain?: string; subject: string }> = [];
-
-      for (const it of items) {
-        const match = String(it.id || "").match(/^(english|mathematics|physics|chemistry|biology)_/i);
-        const subj = match ? match[1].toLowerCase() : "general";
-        if (!subjectsStats[subj]) subjectsStats[subj] = { correct: 0, total: 0 };
-        subjectsStats[subj].total += 1;
-        if (it.pick && it.answer && it.pick === it.answer) {
-          subjectsStats[subj].correct += 1;
-        } else if (it.pick && it.answer && it.pick !== it.answer) {
-          incorrectItems.push({
-            id: it.id,
-            prompt: String(it.prompt || "").substring(0, 140),
-            pick: it.pick,
-            answer: it.answer,
-            explain: it.explain,
-            subject: subj,
-          });
-        }
-      }
-
-      let strongest = "General";
-      let weakest = "General";
-      let highestPct = -1;
-      let lowestPct = 999;
-
-      for (const [s, data] of Object.entries(subjectsStats)) {
-        const sPct = Math.round((data.correct / Math.max(1, data.total)) * 100);
-        if (sPct > highestPct) {
-          highestPct = sPct;
-          strongest = s.charAt(0).toUpperCase() + s.slice(1);
-        }
-        if (sPct < lowestPct) {
-          lowestPct = sPct;
-          weakest = s.charAt(0).toUpperCase() + s.slice(1);
-        }
-      }
-
-      // Default deterministic review
-      const deterministicReview = {
-        summary: `Candidate achieved ${score}/${total} (${pct}%). Strongest performance was observed in ${strongest} (${highestPct}%), while ${weakest} (${lowestPct}%) represents the primary area requiring revision prior to the official UTME sitting.`,
-        strongestSubject: strongest,
-        weakestSubject: weakest,
-        strengths: [
-          `Consistent accuracy in ${strongest} sections with steady answer selection under timed conditions.`,
-          `Effective elimination of obvious distractors across multiple-choice options.`,
-        ],
-        weaknesses: incorrectItems.slice(0, 4).map((it) => ({
-          id: it.id,
-          concept: `${it.subject.charAt(0).toUpperCase() + it.subject.slice(1)} Key Concept`,
-          theTrap: `Selected option (${it.pick}) reflects common misinterpretation of the question premise.`,
-          theReality: it.explain || `Official answer key is (${it.answer}). Review foundational rules and formulas.`,
-        })),
-        actionPlan: [
-          `Target at least 2 timed revision sets in ${weakest} focusing on foundational syllabus definitions and calculation steps.`,
-          `Review the specific question explanations highlighted below and maintain an error log for repeated misconceptions.`,
-          `Practice active pacing to ensure an average of 40 seconds per question across all 4 subjects.`,
-        ],
-      };
-
-      const apiKey = getGeminiApiKey();
-      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-        return res.json({ ok: true, review: deterministicReview, mode: "deterministic" });
-      }
-
-      try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-        });
-
-        const prompt = `You are a premier Nigerian UTME examination diagnostic tutor. 
-Analyze this student's JAMB attempt results and provide a concise, high-impact review:
-Total score: ${score}/${total} (${pct}%).
-Strongest subject: ${strongest} (${highestPct}%).
-Weakest subject: ${weakest} (${lowestPct}%).
-Sample missed questions: ${JSON.stringify(incorrectItems.slice(0, 4))}
-
-Return JSON:
-{
-  "summary": "1-2 sentence overall performance summary with strongest and weakest subject",
-  "strongestSubject": "${strongest}",
-  "weakestSubject": "${weakest}",
-  "strengths": ["2 concise strengths"],
-  "weaknesses": [
-    {
-      "id": "question id",
-      "concept": "concept name",
-      "theTrap": "what the student likely misunderstood",
-      "theReality": "the correct rule or working"
-    }
-  ],
-  "actionPlan": ["2-3 practical recommendations"]
-}`;
-
-        const result = await ai.models.generateContent({
-          model: configuredModel || "gemini-2.5-flash",
-          contents: prompt,
-          config: { responseMimeType: "application/json" },
-        });
-
-        const parsed = JSON.parse(result.text || "{}");
-        if (parsed.summary) {
-          return res.json({ ok: true, review: parsed, mode: "gemini_ai" });
-        }
-      } catch (geminiErr) {
-        console.warn("Gemini review attempt error, falling back to deterministic:", geminiErr);
-      }
-
-      return res.json({ ok: true, review: deterministicReview, mode: "deterministic" });
-    } catch (err: any) {
-      console.error("Review attempt route error:", err);
-      return res.status(500).json({ ok: false, message: err.message || "Failed to process review." });
-    }
-  });
-
-  // Admin AI Status & Test Endpoints
-  app.get("/api/admin/ai-status", (req, res) => {
-    const apiKey = getGeminiApiKey();
-    const configured = Boolean(apiKey && apiKey !== "MY_GEMINI_API_KEY");
-    return res.json({
+  // Admin AI Status & Gemini Configuration Endpoints
+  //
+  // All /api/admin/* settings routes require a valid administrator session
+  // (verified against the FastAPI backend). The response never contains the
+  // API key itself — only a masked hint and its source.
+  function geminiStatusPayload() {
+    const { key, source } = resolveGeminiKey();
+    const cfg = readGeminiConfig();
+    return {
       ok: true,
-      configured,
-      model: configuredModel,
+      configured: Boolean(key),
+      model: getGeminiModel(),
+      models: [...SUPPORTED_GEMINI_MODELS],
+      keyHint: maskGeminiKey(key),
+      keySource: source,
+      updatedAt: cfg.updatedAt ?? null,
+      updatedBy: cfg.updatedBy ?? null,
+      temperatures: getGeminiTemperatures(),
       provider: "Google Gemini Vision (@google/genai)",
       method: "Server-side proxy route (/api/extract-notes)",
-      secretLocation: "AI Studio Settings > Secrets (GEMINI_API_KEY)",
-      statusText: configured ? "Configured (Server-side)" : "Not configured",
-    });
+      secretLocation:
+        source === "saved"
+          ? "Admin settings (Gemini AI & OCR)"
+          : "AI Studio Settings > Secrets (GEMINI_API_KEY)",
+      statusText: key ? "Configured (Server-side)" : "Not configured",
+    };
+  }
+
+  async function adminGuard(req: any, res: any): Promise<string | null> {
+    const auth = await requireAdminInfo(req);
+    if (auth.failure) {
+      res.status(auth.failure.status).json({
+        ok: false,
+        code: auth.failure.code,
+        message: auth.failure.message,
+      });
+      return null;
+    }
+    return auth.email;
+  }
+
+  function isSupportedModel(model: unknown): model is string {
+    return (
+      typeof model === "string" &&
+      (SUPPORTED_GEMINI_MODELS as readonly string[]).includes(model.trim())
+    );
+  }
+
+  app.get("/api/admin/ai-status", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    return res.json(geminiStatusPayload());
   });
 
-  app.post("/api/admin/set-model", (req, res) => {
-    const { model } = req.body;
-    if (model && typeof model === "string") {
-      configuredModel = model.trim();
+  // Add or replace the Gemini API key and/or model. Saved to
+  // .gemini-config.json and picked up by every Gemini route immediately.
+  app.post("/api/admin/gemini/config", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+
+    const { apiKey, model, clearKey } = req.body ?? {};
+    const patch: Partial<GeminiConfigFile> = {};
+
+    if (clearKey === true) {
+      patch.apiKey = "";
+    } else if (apiKey !== undefined) {
+      if (typeof apiKey !== "string") {
+        return res.status(400).json({ ok: false, message: "apiKey must be a string." });
+      }
+      const trimmed = apiKey.trim();
+      if (trimmed === "") {
+        patch.apiKey = ""; // clearing falls back to GEMINI_API_KEY
+      } else if (trimmed.length < 20 || trimmed.length > 500 || /\s/.test(trimmed)) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "That API key does not look valid (20-500 characters, no spaces)." });
+      } else {
+        patch.apiKey = trimmed;
+      }
     }
-    return res.json({ ok: true, model: configuredModel });
+
+    if (model !== undefined) {
+      if (!isSupportedModel(model)) {
+        return res.status(400).json({
+          ok: false,
+          message: `Unsupported model. Choose one of: ${SUPPORTED_GEMINI_MODELS.join(", ")}.`,
+        });
+      }
+      patch.model = model.trim();
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Provide an apiKey (or clearKey: true) and/or a model." });
+    }
+
+    writeGeminiConfig(patch, email);
+    return res.json(geminiStatusPayload());
+  });
+
+  app.post("/api/admin/set-model", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { model } = req.body ?? {};
+    if (!isSupportedModel(model)) {
+      return res.status(400).json({
+        ok: false,
+        message: `Unsupported model. Choose one of: ${SUPPORTED_GEMINI_MODELS.join(", ")}.`,
+      });
+    }
+    writeGeminiConfig({ model: model.trim() }, email);
+    return res.json({ ok: true, model: getGeminiModel() });
+  });
+
+  app.post("/api/admin/set-temperature", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { category, temperature } = req.body ?? {};
+    if (!category || typeof temperature !== "number") {
+      return res.status(400).json({ ok: false, message: "category and temperature are required." });
+    }
+    const validCategories: TemperatureCategory[] = ["ocr", "review", "theory", "cbt"];
+    if (!validCategories.includes(category as TemperatureCategory)) {
+      return res.status(400).json({ ok: false, message: "Invalid category. Use: ocr, review, theory, or cbt." });
+    }
+    if (temperature < 0 || temperature > 1) {
+      return res.status(400).json({ ok: false, message: "Temperature must be between 0 and 1." });
+    }
+    writeGeminiConfig(
+      { temperatures: { ...getGeminiTemperatures(), [category as TemperatureCategory]: temperature } },
+      email,
+    );
+    return res.json({ ok: true, category, temperature });
   });
 
   app.post("/api/admin/test-ai", async (req, res) => {
-    const apiKey = getGeminiApiKey();
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { key, source } = resolveGeminiKey();
+    const apiKey = key;
     if (!apiKey) {
       return res.status(401).json({
         ok: false,
@@ -1621,13 +2136,14 @@ Return JSON:
         apiKey,
         httpOptions: { headers: { "User-Agent": "aistudio-build" } },
       });
+      const model = getGeminiModel();
       const result = await ai.models.generateContent({
-        model: configuredModel,
+        model,
         contents: "Respond with the single word: READY",
       });
       return res.json({
         ok: true,
-        message: `Gemini API authenticated successfully. Model: ${configuredModel}. Response: ${result.text?.trim()}`,
+        message: `Gemini API authenticated successfully. Model: ${model} (${source} key). Response: ${result.text?.trim()}`,
       });
     } catch (err: any) {
       let cleanMessage = "Failed to connect to Gemini API.";
@@ -1667,21 +2183,476 @@ Return JSON:
     }
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+  // -------------------------------------------------------------------------
+  // Weekly CBT: server-side Gemini relay (spec 4.1 / 4.5)
+  //
+  // The FastAPI backend owns the examination, its generation jobs and its
+  // batches. This is the single place the Gemini key is used for weekly
+  // question generation: the caller must present a valid admin session
+  // (verified against the backend) before any quota is spent, and the
+  // response is validated structured JSON with honest error classification.
+  // -------------------------------------------------------------------------
+
+  const FASTAPI_BASE_URL = (process.env.FASTAPI_URL || "http://127.0.0.1:8000/api/v1").replace(
+    /\/$/,
+    "",
+  );
+
+  type RelayErrorCode =
+    | "quota"
+    | "rate_limit"
+    | "timeout"
+    | "bad_output"
+    | "key_missing"
+    | "auth_required"
+    | "bad_request";
+
+  type RelayFailure = { status: number; code: RelayErrorCode; message: string };
+
+  // Verifying a bearer token costs one /auth/me round-trip to FastAPI
+  // (each is ~0.5-5 s against Neon). Cache verifications briefly so a burst
+  // of settings actions only pays for one round-trip; failures are never
+  // cached, so a backend blip recovers on the very next request.
+  const adminSessionCache = new Map<string, { role: string; email: string; expires: number }>();
+  const ADMIN_SESSION_CACHE_MS = 60_000;
+
+  async function requireAdminInfo(
+    req: any,
+  ): Promise<{ failure: RelayFailure | null; email: string | null }> {
+    const header = String(req.headers?.authorization || "");
+    const token = header.replace(/^bearer\s+/i, "").trim();
+    if (!token) {
+      return {
+        failure: { status: 401, code: "auth_required", message: "Admin sign-in required." },
+        email: null,
+      };
+    }
+
+    const now = Date.now();
+    const cached = adminSessionCache.get(token);
+    if (cached && cached.expires > now) {
+      if (String(cached.role).toUpperCase() !== "ADMIN") {
+        return {
+          failure: { status: 403, code: "auth_required", message: "Administrator role required." },
+          email: null,
+        };
+      }
+      return { failure: null, email: cached.email };
+    }
+
+    let user: any = null;
+    try {
+      const response = await fetch(`${FASTAPI_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        return {
+          failure: {
+            status: 401,
+            code: "auth_required",
+            message: "Your session is invalid or expired. Sign in again as an administrator.",
+          },
+          email: null,
+        };
+      }
+      user = await response.json();
+    } catch {
+      return {
+        failure: {
+          status: 503,
+          code: "auth_required",
+          message: "Could not verify the admin session because the backend is unreachable.",
+        },
+        email: null,
+      };
+    }
+
+    if (adminSessionCache.size > 200) adminSessionCache.clear();
+    adminSessionCache.set(token, {
+      role: String(user?.role || ""),
+      email: String(user?.email || ""),
+      expires: now + ADMIN_SESSION_CACHE_MS,
     });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+
+    if (String(user?.role || "").toUpperCase() !== "ADMIN") {
+      return {
+        failure: { status: 403, code: "auth_required", message: "Administrator role required." },
+        email: null,
+      };
+    }
+    return { failure: null, email: String(user?.email || "") };
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  async function requireAdminSession(req: any): Promise<RelayFailure | null> {
+    return (await requireAdminInfo(req)).failure;
+  }
+
+  function classifyGeminiFailure(err: any): RelayFailure {
+    const raw = String(err?.message || "");
+    const status = Number(err?.status || err?.statusCode || 0);
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("timed out") || lower.includes("timeout") || err?.name === "TimeoutError") {
+      return {
+        status: 504,
+        code: "timeout",
+        message: "The AI request timed out before finishing. Retry this batch.",
+      };
+    }
+    if (status === 429 || raw.includes("RESOURCE_EXHAUSTED") || lower.includes("rate limit")) {
+      const looksLikeQuota = lower.includes("quota") || raw.includes("LIMIT") || lower.includes("billing");
+      if (looksLikeQuota) {
+        return {
+          status: 503,
+          code: "quota",
+          message: "The Gemini API quota for this project is exhausted. Generation is paused until the quota resets.",
+        };
+      }
+      return {
+        status: 429,
+        code: "rate_limit",
+        message: "Gemini is rate limiting requests right now. Wait a moment and retry this batch.",
+      };
+    }
+    if (status === 401 || status === 403 || lower.includes("api key not valid") || lower.includes("unauthenticated")) {
+      return {
+        status: 503,
+        code: "key_missing",
+        message: "The server's Gemini API key is missing or rejected. Configure GEMINI_API_KEY on the server.",
+      };
+    }
+    if (lower.includes("timed out") === false && (lower.includes("parse") || lower.includes("json") || lower.includes("empty response"))) {
+      return {
+        status: 502,
+        code: "bad_output",
+        message: "Gemini returned a response that could not be read as valid question JSON. Retry this batch.",
+      };
+    }
+    if (status === 503 && lower.includes("gemini_api_key")) {
+      return {
+        status: 503,
+        code: "key_missing",
+        message: "GEMINI_API_KEY is not configured on the server.",
+      };
+    }
+    return {
+      status: 502,
+      code: "bad_output",
+      message: `Gemini generation failed: ${raw.slice(0, 300) || "unknown error"}`,
+    };
+  }
+
+  type RelayQuestion = {
+    prompt: string;
+    options: Record<string, string>;
+    answer: string;
+    explanation: string;
+    subject: string;
+    topic: string;
+    difficulty: string;
+    /** Physics only: the model's own question-type classification. */
+    type: string;
+  };
+
+  function normalizeRelayQuestion(raw: any, subject: string): RelayQuestion | null {
+    if (!raw || typeof raw !== "object") return null;
+    const prompt = String(raw.prompt ?? raw.question_text ?? "").trim();
+    if (prompt.length < 5) return null;
+
+    const sourceOptions = raw.options;
+    const options: Record<string, string> = {};
+    if (Array.isArray(sourceOptions)) {
+      for (const entry of sourceOptions) {
+        const key = String(entry?.key ?? entry?.label ?? "").trim().toUpperCase();
+        const text = String(entry?.text ?? entry?.value ?? "").trim();
+        if (key && text) options[key] = text;
+      }
+    } else if (sourceOptions && typeof sourceOptions === "object") {
+      for (const [key, value] of Object.entries(sourceOptions)) {
+        const normalizedKey = String(key).trim().toUpperCase();
+        const text = String(value ?? "").trim();
+        if (normalizedKey && text) options[normalizedKey] = text;
+      }
+    }
+    if (Object.keys(options).length !== 4) return null;
+    for (const key of ["A", "B", "C", "D"]) {
+      if (!options[key]) return null;
+    }
+
+    const answer = String(raw.answer ?? raw.correct_answer ?? "").trim().toUpperCase();
+    if (!["A", "B", "C", "D"].includes(answer)) return null;
+
+    const explanation = String(raw.explanation ?? raw.explain ?? "").trim();
+    if (explanation.length < 5) return null;
+
+    return {
+      prompt,
+      options,
+      answer,
+      explanation,
+      topic: String(raw.topic || "General").trim().slice(0, 120),
+      difficulty: ["easy", "medium", "hard"].includes(String(raw.difficulty || "").toLowerCase())
+        ? String(raw.difficulty).toLowerCase()
+        : "medium",
+      type: parseQuestionType(raw),
+      subject,
+    };
+  }
+
+  app.post("/api/admin/gemini/generate-questions", async (req, res) => {
+    const authFailure = await requireAdminSession(req);
+    if (authFailure) {
+      return res.status(authFailure.status).json({
+        ok: false,
+        code: authFailure.code,
+        message: authFailure.message,
+      });
+    }
+
+    const subject = String(req.body?.subject || "").trim().toLowerCase();
+    const validSubjects = ["english", "mathematics", "physics", "chemistry", "biology"];
+    if (!validSubjects.includes(subject)) {
+      return res.status(400).json({
+        ok: false,
+        code: "bad_request",
+        message: `subject must be one of: ${validSubjects.join(", ")}.`,
+      });
+    }
+
+    const requestedCount = Number(req.body?.count ?? 10);
+    if (!Number.isFinite(requestedCount) || requestedCount < 1 || requestedCount > 20) {
+      return res.status(400).json({
+        ok: false,
+        code: "bad_request",
+        message: "count must be between 1 and 20 questions per batch (spec 4.1).",
+      });
+    }
+    const count = Math.floor(requestedCount);
+
+    const topicFocus = String(req.body?.topic_focus || req.body?.topic || "").trim().slice(0, 200);
+    const difficulty = String(req.body?.difficulty || "medium").trim().slice(0, 40);
+    const syllabusFocus = String(req.body?.syllabus_focus || "").trim().slice(0, 500);
+    const excludePrompts: string[] = Array.isArray(req.body?.exclude_prompts)
+      ? (req.body.exclude_prompts as unknown[]).slice(0, 60).map((value) => String(value).trim()).filter(Boolean)
+      : [];
+
+    if (!getGeminiApiKey()) {
+      return res.status(503).json({
+        ok: false,
+        code: "key_missing",
+        message: "GEMINI_API_KEY is not configured on the server. Add it in AI Studio Settings > Secrets.",
+      });
+    }
+
+    const exclusionBlock =
+      excludePrompts.length > 0
+        ? `\nDO NOT duplicate or re-word any of these existing questions:\n${excludePrompts
+            .map((prompt, index) => `(${index + 1}) "${prompt.replace(/"/g, "'").slice(0, 160)}"`)
+            .join("\n")}`
+        : "";
+    const isPhysics = subject === "physics";
+    const physicsMixLine = isPhysics
+      ? `\nQuestion-type mix: label every question with its "type" (conceptual | numerical | experimental | diagram | application) and produce a natural JAMB mixture — numerical/calculation questions must NOT dominate the batch, and include meaningful non-calculation questions.`
+      : "";
+    const typeField = isPhysics ? `,"type":"conceptual"` : "";
+
+    const instruction = `Generate exactly ${count} authentic Nigerian JAMB UTME multiple-choice questions.
+Subject: ${subject}
+${topicFocus ? `Syllabus topic: ${topicFocus}` : "Cover the broad JAMB syllabus for this subject."}
+Difficulty: ${difficulty}
+${syllabusFocus ? `Syllabus focus: ${syllabusFocus}` : ""}${physicsMixLine}${exclusionBlock}
+
+Return ONLY a JSON object with this exact shape and nothing else:
+{"questions":[{"prompt":"question text","options":{"A":"option one","B":"option two","C":"option three","D":"option four"},"answer":"A","explanation":"why the answer is correct","topic":"syllabus topic","difficulty":"medium"${typeField}}]}
+
+Rules:
+- Exactly ${count} questions, each with four distinct options A-D.
+- "answer" must be one of A, B, C, D.
+- Every question needs a real explanation.
+- Randomise the correct key across A, B, C, and D.
+- Never state or imply that these are official JAMB questions; they are practice questions modelled on the JAMB syllabus.`;
+
+    let parsed: any;
+    let lastFailure: RelayFailure | null = null;
+    // One structural retry on unparseable/empty Gemini output (bad_output only).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        parsed = await executeGeminiTextPrompt(
+          cbtSystemPrompt(subject),
+          instruction,
+          temperatureFor("cbt"),
+          60000,
+        );
+        lastFailure = null;
+        break;
+      } catch (err: any) {
+        const failure = classifyGeminiFailure(err);
+        lastFailure = failure;
+        const retryable =
+          failure.code === "bad_output" && /parse|json|empty response/i.test(String(err?.message || ""));
+        if (!retryable || attempt === 1) break;
+        console.warn(`[weekly-gemini] ${failure.code} (attempt ${attempt + 1}), retrying once: ${failure.message}`);
+      }
+    }
+    if (lastFailure) {
+      console.warn(`[weekly-gemini] ${lastFailure.code}: ${lastFailure.message}`);
+      return res.status(lastFailure.status).json({
+        ok: false,
+        code: lastFailure.code,
+        message: lastFailure.message,
+      });
+    }
+
+    const rawList = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.questions) ? parsed.questions : null;
+    if (!rawList) {
+      return res.status(502).json({
+        ok: false,
+        code: "bad_output",
+        message: "Gemini returned JSON without a questions array. Retry this batch.",
+      });
+    }
+
+    const questions: RelayQuestion[] = [];
+    const seenPrompts = new Set<string>();
+    let inBatchDuplicates = 0;
+    for (const entry of rawList) {
+      const normalized = normalizeRelayQuestion(entry, subject);
+      if (!normalized) continue;
+      const key = normalizeForDup(normalized.prompt);
+      if (seenPrompts.has(key)) {
+        inBatchDuplicates += 1;
+        continue;
+      }
+      seenPrompts.add(key);
+      questions.push(normalized);
+    }
+
+    if (questions.length === 0) {
+      return res.status(502).json({
+        ok: false,
+        code: "bad_output",
+        message: `Gemini returned ${rawList.length} entries but none were structurally valid questions. Retry this batch.`,
+        rejected: rawList.length,
+      });
+    }
+
+    /* ---------------- Physics diversity gate + targeted repair ---------------- */
+    let repaired = false;
+    let correctionsApplied = 0;
+    let droppedDominant = 0;
+    let repairNotes: string[] = [];
+    let rejectedFromRepair = 0;
+
+    if (isPhysics) {
+      const assessment = assessPhysicsDiversity(questions, count);
+
+      // Suspected numericals: explanation shows no digits and no working.
+      const suspects = questions.filter(numericalNeedsAttention);
+      const unclassified = questions.filter((question) => question.type === "unclassified");
+
+      // Deficit: how many more non-numerical questions are needed to clear the floor.
+      const nonNumericalNow =
+        questions.length - assessment.byType.numerical - assessment.byType.unclassified;
+      const deficitCount = Math.max(0, assessment.nonNumericalFloor - nonNumericalNow);
+      const deficientTypes = PHYSICS_QUESTION_TYPES.filter(
+        (type) => type !== "numerical" && assessment.byType[type] > 0,
+      ).slice(0, 2);
+      if (deficitCount > 0 && deficientTypes.length === 0) {
+        deficientTypes.push("conceptual", "application");
+      }
+
+      const needsRepair =
+        assessment.issues.length > 0 || suspects.length > 0 || unclassified.length > 0;
+
+      if (needsRepair) {
+        repairNotes = [...assessment.issues];
+        if (suspects.length > 0) {
+          repairNotes.push(
+            `${suspects.length} numerical question(s) flagged for answer/unit verification`,
+          );
+        }
+        try {
+          const repair = await repairPhysicsBatch({
+            subject,
+            topicFocus,
+            difficulty,
+            count,
+            existing: questions,
+            exclusions: excludePrompts,
+            deficitTypes: deficitCount > 0 ? [...new Set(deficientTypes)] : [],
+            deficitCount,
+            toVerify: suspects.length > 0 ? suspects : assessment.issues.length > 0 && assessment.byType.numerical > 0
+              ? questions.filter((question) => question.type === "numerical")
+              : [],
+            toClassify: unclassified,
+          });
+          rejectedFromRepair = repair.rejected;
+
+          // Apply corrections in place (matched by normalized prompt).
+          for (const question of questions) {
+            const fix = repair.corrections.get(normalizeForDup(question.prompt));
+            if (fix) {
+              question.options = fix.options;
+              question.answer = fix.answer;
+              question.explanation = fix.explanation;
+              if (fix.type !== "unclassified") question.type = fix.type;
+              correctionsApplied += 1;
+            }
+          }
+
+          // Merge genuinely new, non-duplicate questions.
+          let addedCount = 0;
+          for (const added of repair.added) {
+            const key = normalizeForDup(added.prompt);
+            if (seenPrompts.has(key)) continue;
+            seenPrompts.add(key);
+            questions.push(added);
+            addedCount += 1;
+          }
+          if (addedCount > 0) repairNotes.push(`${addedCount} replacement question(s) added`);
+          repaired = true;
+        } catch (repairErr: any) {
+          // A failed repair must never lose the valid first-pass questions.
+          repairNotes.push(
+            `targeted repair call failed (${String(repairErr?.message || repairErr).slice(0, 120)}); keeping first-pass questions`,
+          );
+          console.warn("[weekly-gemini] repair failed:", repairErr?.message);
+        }
+      }
+
+      // Trim back to exactly `count`, dropping from the most abundant type.
+      const trim = trimToCount(questions, count);
+      questions.splice(0, questions.length, ...trim.kept);
+      droppedDominant = trim.dropped;
+      if (trim.dropped > 0) {
+        repairNotes.push(
+          `${trim.dropped} excess question(s) dropped from type "${trim.droppedFrom}" to meet the requested count`,
+        );
+      }
+
+      if (inBatchDuplicates > 0) repairNotes.push(`${inBatchDuplicates} duplicate prompt(s) removed`);
+    }
+
+    return res.json({
+      ok: true,
+      subject,
+      requested: count,
+      returned: questions.length,
+      rejected: rawList.length - questions.length - inBatchDuplicates + rejectedFromRepair,
+      questions,
+      ...(isPhysics
+        ? {
+            types: questions.reduce<Record<string, number>>((acc, question) => {
+              acc[question.type] = (acc[question.type] ?? 0) + 1;
+              return acc;
+            }, {}),
+            repaired,
+            repair_notes: repairNotes,
+            corrections_applied: correctionsApplied,
+            dropped_dominant: droppedDominant,
+          }
+        : {}),
+    });
   });
 }
 

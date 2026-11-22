@@ -1,1695 +1,1632 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Globe,
-  BookOpen,
-  Bell,
-  Sparkles,
-  ShieldCheck,
-  Layers,
-  Wrench,
-  ArrowLeft,
-  Check,
   AlertTriangle,
-  RefreshCw,
-  Lock,
-  Server,
+  ArrowLeft,
   CheckCircle2,
-  XCircle,
+  Cpu,
   Info,
-  User,
-  Mail,
-  Phone,
-  Clock,
-  DollarSign,
-  Calendar,
-  Sliders,
-  Shield,
-  RotateCcw,
-  Trash2,
   KeyRound,
-  ExternalLink,
+  RefreshCw,
+  ShieldCheck,
+  User,
+  XCircle,
+  RotateCw,
+  Plug,
+  Activity,
 } from "lucide-react";
 import {
-  useSettingsStore,
-  calculateTotalCbtQuestions,
-  DEFAULT_GENERAL_SETTINGS,
-  DEFAULT_ACADEMIC_SETTINGS,
-  DEFAULT_NOTIFICATION_SETTINGS,
-  DEFAULT_AI_PREFERENCES,
-  DEFAULT_ADMIN_PROFILE,
-} from "@/lib/settings-store";
+  adminApi,
+  type AiStatus,
+  type PlatformSettingsResponse,
+} from "@/lib/backend";
+import { aiOcrSettings } from "@/lib/ai-settings";
+import type { AiOcrSettings } from "@/types/ai-settings";
 import { useSession } from "@/lib/session";
-import { useContent } from "@/lib/content";
+import { API_CONFIG } from "@/services/api/config";
+import { ApiError } from "@/services/api/errors";
+import { AdminError, AdminField, AdminLoading, AdminPanel } from "@/lib/admin-ui";
+import { cn } from "@/lib/cn";
 
 export const Route = createFileRoute("/admin/settings/$category")({
   component: AdminSettingsCategoryPage,
 });
 
+const CATEGORY_TITLES: Record<string, { title: string; description: string }> = {
+  general: {
+    title: "General Platform",
+    description: "Platform name and core platform information.",
+  },
+  academic: {
+    title: "Learning & Content",
+    description: "Subject configuration and content publishing status.",
+  },
+  examinations: {
+    title: "Examinations",
+    description: "Default CBT duration and the fixed Weekly CBT paper rules.",
+  },
+  users: {
+    title: "Users & Access",
+    description: "Registration, account access and administrator details.",
+  },
+  ai: {
+    title: "Gemini AI & OCR",
+    description:
+      "The Gemini API key, model and connection used by every AI feature: note extraction, question OCR, theory marking and CBT question generation. The key stays server-side and is never shown in the browser.",
+  },
+  payments: {
+    title: "Payments & Integrations",
+    description: "Paystack credentials, integration status and backend connection.",
+  },
+  system: {
+    title: "System Status",
+    description: "Backend and AI service health, diagnostics and audit log.",
+  },
+};
+
+/** Older bookmarked URLs keep working by mapping onto the new categories. */
+const LEGACY_ALIASES: Record<string, string> = {
+  notifications: "system",
+  security: "users",
+  integrations: "payments",
+  developer: "system",
+  advanced: "system",
+  gemini: "ai",
+};
+
+function readSettingsError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+type SettingsMessage = { ok: boolean; text: string } | null;
+
+function SettingsFeedback({ message }: { message: SettingsMessage }) {
+  if (!message) return null;
+  return (
+    <p
+      className={cn(
+        "mt-3 inline-flex items-start gap-2 rounded-xl px-3 py-2 text-sm",
+        message.ok
+          ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+          : "bg-red-50 text-red-700 border border-red-100",
+      )}
+      role="status"
+    >
+      {message.ok ? (
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+      ) : (
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+      )}
+      {message.text}
+    </p>
+  );
+}
+
+function UpdatedStamp({
+  at,
+  by,
+  className,
+}: {
+  at: string | null | undefined;
+  by?: string | null;
+  className?: string;
+}) {
+  if (!at) return <span className={cn("text-xs text-muted", className)}>Never changed</span>;
+  const when = new Date(at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" });
+  return (
+    <span className={cn("text-xs text-muted", className)}>
+      Last updated {when}
+      {by ? ` by ${by}` : ""}
+    </span>
+  );
+}
+
+function usePlatformSettings() {
+  const [data, setData] = useState<PlatformSettingsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await adminApi.platformSettings());
+    } catch (err) {
+      setError(readSettingsError(err, "Could not load platform settings."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { data, loading, error, reload };
+}
+
 export function AdminSettingsCategoryPage() {
   const params = useParams({ strict: false }) as { category?: string };
-  const category = params.category ?? "general";
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
-  };
-
-  const renderCategoryView = () => {
-    switch (category) {
-      case "general":
-        return <GeneralSettingsView showToast={showToast} />;
-      case "academic":
-        return <AcademicSettingsView showToast={showToast} />;
-      case "notifications":
-        return <NotificationSettingsView showToast={showToast} />;
-      case "ai":
-      case "gemini":
-        return <AiSettingsView showToast={showToast} />;
-      case "security":
-        return <SecuritySettingsView showToast={showToast} />;
-      case "integrations":
-        return <IntegrationsSettingsView showToast={showToast} />;
-      case "developer":
-      case "advanced":
-        return <AdvancedSettingsView showToast={showToast} />;
-      default:
-        return (
-          <div className="rounded-2xl border border-line bg-surface p-8 text-center">
-            <AlertTriangle className="mx-auto size-10 text-amber-500" />
-            <h2 className="mt-3 font-display text-xl font-bold text-ink">Unknown Category</h2>
-            <p className="mt-1 text-sm text-muted">The requested settings category was not found.</p>
-            <Link
-              to="/admin/settings"
-              className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-fg"
-            >
-              <ArrowLeft className="size-4" />
-              Back to Settings
-            </Link>
-          </div>
-        );
-    }
-  };
+  const requested = params.category ?? "general";
+  const category = LEGACY_ALIASES[requested] ?? requested;
+  const meta = CATEGORY_TITLES[category];
 
   return (
-    <div className="space-y-8 font-sans pb-12">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-surface px-5 py-3.5 text-xs font-medium text-ink shadow-xl animate-in fade-in slide-in-from-bottom-3">
-          <div className="flex size-7 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-            <Check className="size-4" />
-          </div>
-          <span>{toastMessage}</span>
+    <div className="space-y-6">
+      <Link
+        to="/admin/settings"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+      >
+        <ArrowLeft className="size-3.5" aria-hidden />
+        Back to settings
+      </Link>
+
+      <header>
+        <h1 className="font-display text-3xl sm:text-4xl">{meta?.title ?? "Settings"}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          {meta?.description ?? "This settings category is not available."}
+        </p>
+      </header>
+
+      {category === "general" && <GeneralPanel />}
+      {category === "academic" && <LearningPanel />}
+      {category === "examinations" && <ExaminationsPanel />}
+      {category === "users" && <UsersPanel />}
+      {category === "ai" && <AiOcrSettingsPanel />}
+      {category === "payments" && <PaymentsPanel />}
+      {category === "system" && <SystemPanel />}
+
+      {!meta && (
+        <div className="rounded-2xl border border-line bg-surface p-8 text-center">
+          <AlertTriangle className="mx-auto size-10 text-amber-500" aria-hidden />
+          <h2 className="mt-3 font-display text-xl font-bold text-ink">Unknown category</h2>
+          <p className="mt-1 text-sm text-muted">
+            The requested settings category was not found.
+          </p>
+          <Link
+            to="/admin/settings"
+            className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-fg"
+          >
+            <ArrowLeft className="size-4" aria-hidden />
+            Back to settings
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* General                                                                    */
+/* ------------------------------------------------------------------------- */
+
+function GeneralPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+
+  useEffect(() => {
+    if (data) setName(data.general.platform_name);
+  }, [data]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 80) {
+      setMessage({ ok: false, text: "Platform name must be between 1 and 80 characters." });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updatePlatformSetting("general", { platform_name: trimmed });
+      setMessage({ ok: true, text: "Platform name saved." });
+      await reload();
+    } catch (err) {
+      setMessage({ ok: false, text: readSettingsError(err, "Could not save the platform name.") });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading platform settings…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
+
+      {data && (
+        <>
+          <AdminPanel
+            title="Platform identity"
+            description="Shown in the API health payload and used as the platform display name."
+          >
+            <form onSubmit={save} className="space-y-4 p-4">
+              <AdminField label="Platform name">
+                <input
+                  type="text"
+                  value={name}
+                  maxLength={80}
+                  onChange={(event) => setName(event.target.value)}
+                  className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+                  placeholder="Richmirabel"
+                />
+              </AdminField>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <UpdatedStamp at={data.general.updated_at} by={data.general.updated_by} />
+                <button
+                  type="submit"
+                  disabled={saving || !name.trim() || name.trim() === data.general.platform_name}
+                  className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+              <SettingsFeedback message={message} />
+            </form>
+          </AdminPanel>
+
+          <AdminPanel title="Platform information" description="Read-only details from the backend.">
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Environment">
+                <span className="font-mono text-xs">{data.info.environment}</span>
+              </AdminField>
+              <AdminField label="API service name">
+                <span className="font-mono text-xs">{data.info.app_name}</span>
+              </AdminField>
+              <AdminField label="Frontend URL">
+                <span className="font-mono text-xs">{data.info.frontend_url}</span>
+              </AdminField>
+              <AdminField label="Session lifetime">
+                {data.info.session_ttl_hours} hours
+              </AdminField>
+              <AdminField label="Free trial">
+                {data.info.trial_days} days
+              </AdminField>
+              <AdminField label="Monthly plan">
+                ₦{data.info.monthly_price_ngn.toLocaleString()} · {data.info.monthly_days} days
+              </AdminField>
+            </div>
+          </AdminPanel>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* Learning & Content                                                         */
+/* ------------------------------------------------------------------------- */
+
+function LearningPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+
+  return (
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading content status…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
+
+      {data && (
+        <>
+          <AdminPanel
+            title="Subjects"
+            description="The configured JAMB subject set and how much published content each one has."
+          >
+            <div className="divide-y divide-line">
+              {data.learning.subjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{subject.name}</p>
+                    <p className="text-xs text-muted">
+                      {subject.published_topics} published · {subject.draft_topics} draft ·{" "}
+                      {subject.total_topics} total
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                      subject.published_topics > 0
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                        : "bg-amber-50 text-amber-700 border-amber-100",
+                    )}
+                  >
+                    {subject.published_topics > 0 ? "Live content" : "No published content"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-line px-4 py-3 text-xs text-muted">
+              {data.learning.published_topics} published and {data.learning.draft_topics} draft{" "}
+              {data.learning.draft_topics === 1 ? "topic" : "topics"} across all subjects.
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Content publishing"
+            description="Publishing is managed per topic on the content pages."
+          >
+            <div className="flex flex-wrap gap-3 p-4">
+              <Link
+                to="/admin/subjects"
+                className="inline-flex min-h-10 items-center rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper"
+              >
+                Subjects &amp; content
+              </Link>
+              <Link
+                to="/admin/topics"
+                className="inline-flex min-h-10 items-center rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper"
+              >
+                Topics &amp; publishing
+              </Link>
+              <Link
+                to="/admin/notes"
+                className="inline-flex min-h-10 items-center rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper"
+              >
+                Notes workspace
+              </Link>
+            </div>
+            <div className="border-t border-line px-4 py-3 text-xs text-muted">
+              There is no global content switch: each topic is published or unpublished
+              individually so students only ever see reviewed material.
+            </div>
+          </AdminPanel>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* Examinations                                                               */
+/* ------------------------------------------------------------------------- */
+
+function ExaminationsPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+  const [duration, setDuration] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+
+  useEffect(() => {
+    if (data) setDuration(String(data.examinations.default_duration_minutes));
+  }, [data]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!data) return;
+    const value = Number(duration);
+    const { duration_min: min, duration_max: max } = data.examinations;
+    if (!Number.isInteger(value) || value < min || value > max) {
+      setMessage({ ok: false, text: `Duration must be a whole number between ${min} and ${max} minutes.` });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updatePlatformSetting("examinations", { default_duration_minutes: value });
+      setMessage({ ok: true, text: "Default examination duration saved." });
+      await reload();
+    } catch (err) {
+      setMessage({
+        ok: false,
+        text: readSettingsError(err, "Could not save the default duration."),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading examination settings…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
+
+      {data && (
+        <>
+          <AdminPanel
+            title="Default examination duration"
+            description="Applied when a new Weekly CBT draft is created without an explicit duration. Existing examinations keep the duration they were created with."
+          >
+            <form onSubmit={save} className="space-y-4 p-4">
+              <AdminField label="Duration (minutes)">
+                <input
+                  type="number"
+                  min={data.examinations.duration_min}
+                  max={data.examinations.duration_max}
+                  step={1}
+                  value={duration}
+                  onChange={(event) => setDuration(event.target.value)}
+                  className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+                />
+              </AdminField>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <UpdatedStamp
+                  at={data.examinations.updated_at}
+                  by={data.examinations.updated_by}
+                />
+                <button
+                  type="submit"
+                  disabled={saving || duration === String(data.examinations.default_duration_minutes)}
+                  className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+              <SettingsFeedback message={message} />
+            </form>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Weekly CBT paper rules"
+            description="The fixed structure of every student attempt. These values come from the examination system and are not editable here."
+          >
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Questions per attempt">
+                {data.examinations.paper_total_questions}
+              </AdminField>
+              <AdminField label="Use of English">
+                {data.examinations.english_questions} questions (compulsory)
+              </AdminField>
+              <AdminField label="Registered electives">
+                {data.examinations.elective_count} subjects ×{" "}
+                {data.examinations.elective_questions_each} questions
+              </AdminField>
+              <AdminField label="Paper assembly">
+                Server-assembled from the approved question pool
+              </AdminField>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
+              <p className="text-xs text-muted">
+                Changing the default duration never alters question counts, timing rules for
+                running attempts, or already-created papers.
+              </p>
+              <Link
+                to="/admin/cbt"
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                Open CBT Generator
+              </Link>
+            </div>
+          </AdminPanel>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* Users & Access                                                             */
+/* ------------------------------------------------------------------------- */
+
+function UsersPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+  const name = useSession((state) => state.name);
+  const email = useSession((state) => state.email);
+  const role = useSession((state) => state.role);
+  const status = useSession((state) => state.status);
+
+  useEffect(() => {
+    if (data) setRegistrationOpen(data.users.registration_open);
+  }, [data]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!data) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updatePlatformSetting("users", { registration_open: registrationOpen });
+      setMessage({
+        ok: true,
+        text: registrationOpen
+          ? "New registrations are open."
+          : "New registrations are closed.",
+      });
+      await reload();
+    } catch (err) {
+      setMessage({
+        ok: false,
+        text: readSettingsError(err, "Could not save the registration setting."),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading access settings…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
+
+      {data && (
+        <>
+          <AdminPanel
+            title="Registration"
+            description="Controls whether new student accounts can be created. Existing accounts are always unaffected."
+          >
+            <form onSubmit={save} className="space-y-4 p-4">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={registrationOpen}
+                  onChange={(event) => setRegistrationOpen(event.target.checked)}
+                  className="size-4 rounded border-line text-primary accent-primary"
+                />
+                <span className="text-sm text-ink">Accept new student registrations</span>
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <UpdatedStamp at={data.users.updated_at} by={data.users.updated_by} />
+                <button
+                  type="submit"
+                  disabled={
+                    saving || registrationOpen === data.users.registration_open
+                  }
+                  className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+              <SettingsFeedback message={message} />
+            </form>
+          </AdminPanel>
+
+          <AdminPanel title="Accounts" description="Live counts and access policy from the backend.">
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Students">{data.users.student_count}</AdminField>
+              <AdminField label="Administrators">{data.users.admin_count}</AdminField>
+              <AdminField label="Session lifetime">
+                {data.users.session_ttl_hours} hours
+              </AdminField>
+              <AdminField label="Password reset window">
+                {data.users.password_reset_ttl_minutes} minutes
+              </AdminField>
+              <AdminField label="Registration rate limit">
+                {data.users.register_rate_limit
+                  ? `${data.users.register_rate_limit} per minute per IP`
+                  : "Rate limiting disabled"}
+              </AdminField>
+              <AdminField label="Account management">
+                <Link to="/admin/students" className="font-semibold text-primary hover:underline">
+                  Open Students
+                </Link>
+              </AdminField>
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Administrator account"
+            description="Read-only details from the current authenticated session."
+          >
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Name">
+                <span className="inline-flex items-center gap-2">
+                  <User className="size-4 text-muted" aria-hidden />
+                  {name || "Not available"}
+                </span>
+              </AdminField>
+              <AdminField label="Email">{email || "Not available"}</AdminField>
+              <AdminField label="Role">{role ?? "Not available"}</AdminField>
+              <AdminField label="Session status">{status}</AdminField>
+            </div>
+            <div className="border-t border-line px-4 py-3 text-xs text-muted">
+              Password and credential management use the standard sign-in and password reset
+              flow. Credentials are never stored in browser settings.
+            </div>
+          </AdminPanel>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* Gemini AI & OCR                                                            */
+/* ------------------------------------------------------------------------- */
+
+const FALLBACK_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+];
+
+const KEY_SOURCE_LABELS: Record<string, string> = {
+  saved: "Saved in admin settings",
+  environment: "Server environment (GEMINI_API_KEY)",
+  file: "Server environment file",
+  builtin: "Built-in server default",
+  none: "Not configured",
+};
+
+function AiOcrSettingsPanel() {
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+  const [localSettings, setLocalSettings] = useState<AiOcrSettings>(aiOcrSettings.getSettings());
+  const [keyInput, setKeyInput] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<SettingsMessage>(null);
+
+  const QUALITY_OPTIONS: { value: AiOcrSettings["ocrQuality"]; label: string; hint: string }[] = [
+    { value: "fast", label: "Fast", hint: "Smaller images, quicker extraction, lower detail" },
+    { value: "standard", label: "Standard", hint: "Balanced quality and speed (default)" },
+    { value: "high", label: "High", hint: "Full resolution, best detail, slower extraction" },
+  ];
+
+  const LATEX_OPTIONS: { value: AiOcrSettings["latexOutput"]; label: string }[] = [
+    { value: "katex", label: "KaTeX" },
+    { value: "latex", label: "LaTeX" },
+  ];
+
+  const modelOptions = useMemo(() => {
+    const list = [...(status?.models?.length ? status.models : FALLBACK_MODELS)];
+    if (status?.model && !list.includes(status.model)) list.unshift(status.model);
+    return list;
+  }, [status]);
+
+  useEffect(() => {
+    void loadStatus();
+  }, []);
+
+  async function loadStatus() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const st = await adminApi.aiStatus();
+      setStatus(st);
+      // Sync local settings with server model if available
+      if (st.model) {
+        aiOcrSettings.updateSettings({ model: st.model });
+        setLocalSettings(aiOcrSettings.getSettings());
+      }
+      if (st.temperatures) {
+        aiOcrSettings.updateSettings({
+          temperatureOcr: st.temperatures.ocr,
+          temperatureReview: st.temperatures.review,
+          temperatureTheory: st.temperatures.theory,
+          temperatureCbt: st.temperatures.cbt,
+        });
+        setLocalSettings(aiOcrSettings.getSettings());
+      }
+    } catch (err) {
+      setMessage({
+        ok: false,
+        text: readSettingsError(err, "Could not load AI status."),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveKey() {
+    if (!keyInput.trim()) return;
+    setKeyBusy(true);
+    setMessage(null);
+    try {
+      const next = await adminApi.saveGeminiConfig({ apiKey: keyInput.trim() });
+      setStatus(next);
+      setKeyInput("");
+      if (next.model) {
+        aiOcrSettings.updateSettings({ model: next.model });
+        setLocalSettings(aiOcrSettings.getSettings());
+      }
+      setMessage({
+        ok: true,
+        text: "API key saved. Every Gemini feature now uses it — no restart needed.",
+      });
+    } catch (err) {
+      setMessage({ ok: false, text: readSettingsError(err, "Could not save the API key.") });
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  async function clearKey() {
+    setKeyBusy(true);
+    setMessage(null);
+    try {
+      const next = await adminApi.saveGeminiConfig({ clearKey: true });
+      setStatus(next);
+      setMessage({
+        ok: true,
+        text: "Saved key removed. The server fell back to its environment key.",
+      });
+    } catch (err) {
+      setMessage({ ok: false, text: readSettingsError(err, "Could not remove the API key.") });
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await adminApi.testAi();
+      setTestResult({ ok: true, text: result.message });
+    } catch (err) {
+      setTestResult({ ok: false, text: readSettingsError(err, "Connection test failed.") });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    setMessage(null);
+    let ok = true;
+    let detail = "";
+
+    try {
+      await adminApi.setModel({ model: localSettings.model });
+    } catch (err) {
+      ok = false;
+      detail = readSettingsError(err, "Failed to save model.");
+    }
+
+    if (ok) {
+      try {
+        await adminApi.setTemperature({
+          category: "ocr",
+          temperature: localSettings.temperatureOcr,
+        });
+      } catch (err) {
+        ok = false;
+        detail = readSettingsError(err, "Failed to save OCR temperature.");
+      }
+    }
+
+    if (ok) {
+      try {
+        await adminApi.setTemperature({
+          category: "review",
+          temperature: localSettings.temperatureReview,
+        });
+      } catch (err) {
+        ok = false;
+        detail = readSettingsError(err, "Failed to save review temperature.");
+      }
+    }
+
+    if (ok) {
+      try {
+        await adminApi.setTemperature({
+          category: "theory",
+          temperature: localSettings.temperatureTheory,
+        });
+      } catch (err) {
+        ok = false;
+        detail = readSettingsError(err, "Failed to save theory temperature.");
+      }
+    }
+
+    if (ok) {
+      try {
+        await adminApi.setTemperature({
+          category: "cbt",
+          temperature: localSettings.temperatureCbt,
+        });
+      } catch (err) {
+        ok = false;
+        detail = readSettingsError(err, "Failed to save CBT temperature.");
+      }
+    }
+
+    if (ok) {
+      aiOcrSettings.updateSettings(localSettings);
+      setMessage({ ok: true, text: "AI settings saved." });
+      void loadStatus();
+    } else {
+      setMessage({ ok: false, text: detail || "Failed to save settings." });
+    }
+
+    setSaving(false);
+  }
+
+  function resetDefaults() {
+    const defaults = aiOcrSettings.resetToDefaults();
+    setLocalSettings(defaults);
+    setMessage({ ok: true, text: "Settings reset to defaults." });
+  }
+
+  return (
+    <AdminPanel
+      title="Gemini AI & OCR Settings"
+      description="One shared configuration for note extraction, question OCR, theory marking, attempt review and CBT question generation. The API key stays on the server and is never returned to the browser."
+    >
+      {loading && <AdminLoading label="Loading AI status…" />}
+
+      {!loading && status && (
+        <div className="grid gap-4 p-4 sm:grid-cols-2">
+          <AdminField label="Provider">
+            <span className="font-mono text-xs">{status.provider}</span>
+          </AdminField>
+          <AdminField label="Method">
+            <span className="font-mono text-xs">{status.method}</span>
+          </AdminField>
+          <AdminField label="Configuration status">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                status.configured
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                  : "bg-red-50 text-red-700 border-red-100",
+              )}
+            >
+              {status.statusText}
+            </span>
+          </AdminField>
+          <AdminField label="Active key">
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+              <KeyRound className="size-3.5 text-muted" aria-hidden />
+              {status.keyHint || "None"}
+              <span className="font-sans text-muted">
+                ({KEY_SOURCE_LABELS[status.keySource ?? ""] ?? status.keySource ?? "unknown"})
+              </span>
+            </span>
+          </AdminField>
+          <AdminField label="Secret location">
+            <span className="font-mono text-xs text-muted">{status.secretLocation}</span>
+          </AdminField>
+          <AdminField label="Last configuration change">
+            <UpdatedStamp at={status.updatedAt} by={status.updatedBy} />
+          </AdminField>
         </div>
       )}
 
-      {renderCategoryView()}
-    </div>
-  );
-}
-
-// ============================================================================
-// 1. GENERAL PLATFORM SETTINGS VIEW
-// ============================================================================
-function GeneralSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const general = useSettingsStore((s) => s.general);
-  const updateGeneralSettings = useSettingsStore((s) => s.updateGeneralSettings);
-
-  const [form, setForm] = useState({ ...general });
-
-  useEffect(() => {
-    setForm({ ...general });
-  }, [general]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateGeneralSettings(form);
-    showToast("General platform settings saved successfully.");
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">General Platform</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            General Platform Settings
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Configure platform identity, branding, regional preferences, and maintenance mode.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Platform Identity */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Globe className="size-4" />
-            </div>
+      {!loading && (
+        <>
+          {/* ---- API key ---- */}
+          <div className="space-y-3 border-t border-line p-4">
             <div>
-              <h2 className="font-display text-base font-bold text-ink">Platform Identity & Contact</h2>
-              <p className="text-xs text-muted">Core naming and support details shown to candidates</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-semibold text-ink">Platform Name</label>
-              <input
-                type="text"
-                value={form.platformName}
-                onChange={(e) => setForm({ ...form, platformName: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Richmirabel JAMB/WAEC CBT Platform"
-                required
-              />
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-semibold text-ink">Platform Tagline & Description</label>
-              <textarea
-                value={form.platformTagline}
-                onChange={(e) => setForm({ ...form, platformTagline: e.target.value })}
-                rows={2}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Brief description of the platform capabilities"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
-                <Mail className="size-3.5 text-muted" /> Support Email
+              <label
+                className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2"
+                htmlFor="gemini-api-key"
+              >
+                Gemini API key
               </label>
-              <input
-                type="email"
-                value={form.supportEmail}
-                onChange={(e) => setForm({ ...form, supportEmail: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="support@richmirabel.ng"
-                required
-              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="gemini-api-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={keyInput}
+                  onChange={(event) => setKeyInput(event.target.value)}
+                  placeholder={
+                    status?.keyHint
+                      ? `Enter a new key to replace ${status.keyHint}`
+                      : "Paste a Gemini API key"
+                  }
+                  className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveKey()}
+                    disabled={keyBusy || keyInput.trim().length < 20}
+                    className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+                  >
+                    {keyBusy ? "Saving…" : "Save key"}
+                  </button>
+                  {status?.keySource === "saved" && (
+                    <button
+                      type="button"
+                      onClick={() => void clearKey()}
+                      disabled={keyBusy}
+                      className="min-h-10 rounded-full border border-line px-4 text-sm font-semibold text-muted hover:bg-paper disabled:opacity-50"
+                    >
+                      Remove saved key
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                Replacing the key takes effect immediately for OCR, notes extraction, review and
+                CBT generation. The stored key is only ever shown as a masked hint.
+              </p>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
-                <Phone className="size-3.5 text-muted" /> Support Phone Number
-              </label>
-              <input
-                type="text"
-                value={form.supportPhone}
-                onChange={(e) => setForm({ ...form, supportPhone: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="+234 803 123 4567"
-              />
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-semibold text-ink">Official Website URL</label>
-              <input
-                type="url"
-                value={form.websiteUrl}
-                onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="https://richmirabel.ng"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Localisation & Regional Preferences */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Clock className="size-4" />
-            </div>
             <div>
-              <h2 className="font-display text-base font-bold text-ink">Regional & Localisation Preferences</h2>
-              <p className="text-xs text-muted">Timezone, currency symbols, and date formatting</p>
+              <label
+                className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2"
+                htmlFor="gemini-model"
+              >
+                Gemini model
+              </label>
+              <select
+                id="gemini-model"
+                value={localSettings.model}
+                onChange={(event) =>
+                  setLocalSettings((prev) => ({ ...prev, model: event.target.value }))
+                }
+                className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+              >
+                {modelOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted">
+                Used by every server-side AI route. Changes are persisted and take effect on the
+                next request.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void testConnection()}
+                disabled={testing}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper disabled:opacity-50"
+              >
+                <Plug className={cn("size-4", testing && "animate-pulse")} aria-hidden />
+                {testing ? "Testing connection…" : "Test connection"}
+              </button>
+              {testResult && (
+                <p
+                  className={cn(
+                    "inline-flex items-start gap-2 rounded-xl px-3 py-2 text-sm",
+                    testResult.ok
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                      : "bg-red-50 text-red-700 border border-red-100",
+                  )}
+                  role="status"
+                >
+                  {testResult.ok ? (
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  ) : (
+                    <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  )}
+                  {testResult.text}
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Operating Currency</label>
-              <select
-                value={form.currency}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="NGN (₦)">NGN (₦) - Nigerian Naira</option>
-                <option value="USD ($)">USD ($) - US Dollar</option>
-                <option value="GHS (₵)">GHS (₵) - Ghanaian Cedi</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Platform Timezone</label>
-              <select
-                value={form.timezone}
-                onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="Africa/Lagos (GMT+1)">Africa/Lagos (GMT+1)</option>
-                <option value="UTC (GMT+0)">UTC (GMT+0)</option>
-                <option value="Africa/Accra (GMT+0)">Africa/Accra (GMT+0)</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Date Display Format</label>
-              <select
-                value={form.dateFormat}
-                onChange={(e) => setForm({ ...form, dateFormat: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="DD/MM/YYYY">DD/MM/YYYY (e.g. 15/04/2026)</option>
-                <option value="YYYY-MM-DD">YYYY-MM-DD (e.g. 2026-04-15)</option>
-                <option value="MM/DD/YYYY">MM/DD/YYYY (e.g. 04/15/2026)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Maintenance Mode */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-          <div className="flex items-center justify-between border-b border-line pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="size-4" />
+          {/* ---- Temperatures & OCR preferences ---- */}
+          <div className="space-y-4 border-t border-line p-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                  OCR Temperature
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.temperatureOcr}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      temperatureOcr: parseFloat(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between mt-1 text-xs text-muted">
+                  <span>0.0 (deterministic)</span>
+                  <span>{localSettings.temperatureOcr}</span>
+                  <span>1.0 (creative)</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Temperature for note extraction OCR. Lower = more consistent, higher = more varied.
+                </p>
               </div>
               <div>
-                <h2 className="font-display text-base font-bold text-ink">Maintenance Mode</h2>
-                <p className="text-xs text-muted">Temporarily restrict candidate access for maintenance</p>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                  Review Temperature
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.temperatureReview}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      temperatureReview: parseFloat(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between mt-1 text-xs text-muted">
+                  <span>0.0</span>
+                  <span>{localSettings.temperatureReview}</span>
+                  <span>1.0</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Temperature for student attempt review diagnostics.
+                </p>
               </div>
             </div>
 
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.maintenanceMode}
-                onChange={(e) => setForm({ ...form, maintenanceMode: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-            </label>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-ink">
-              <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>
-                When Maintenance Mode is <strong>enabled</strong>, student candidates see a broadcast maintenance screen and CBT exam sessions are temporarily paused. Administrators retain full workspace access.
-              </span>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                  Theory Marking Temperature
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.temperatureTheory}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      temperatureTheory: parseFloat(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between mt-1 text-xs text-muted">
+                  <span>0.0</span>
+                  <span>{localSettings.temperatureTheory}</span>
+                  <span>1.0</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Temperature for theory question marking.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                  CBT Generation Temperature
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.temperatureCbt}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      temperatureCbt: parseFloat(e.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between mt-1 text-xs text-muted">
+                  <span>0.0</span>
+                  <span>{localSettings.temperatureCbt}</span>
+                  <span>1.0</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Temperature for AI CBT question generation. Higher = more creative variety.
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Candidate Maintenance Broadcast Message</label>
-              <textarea
-                value={form.maintenanceMessage}
-                onChange={(e) => setForm({ ...form, maintenanceMessage: e.target.value })}
-                rows={3}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Broadcast message shown to candidates during maintenance..."
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold text-primary-fg shadow-xs hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            <Check className="size-4" />
-            Save General Settings
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// ============================================================================
-// 2. ACADEMIC & LEARNING SETTINGS VIEW
-// ============================================================================
-function AcademicSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const academic = useSettingsStore((s) => s.academic);
-  const updateAcademicSettings = useSettingsStore((s) => s.updateAcademicSettings);
-
-  const [form, setForm] = useState({ ...academic });
-
-  useEffect(() => {
-    setForm({ ...academic });
-  }, [academic]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateAcademicSettings(form);
-    showToast("Academic & learning preferences saved successfully.");
-  };
-
-  const totalQuestions = calculateTotalCbtQuestions(form);
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Academic & Learning</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Academic & Learning Settings
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Configure JAMB UTME subject rules, examination question counts, duration, and review rules.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* JAMB Subject Offerings Summary Grid */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <BookOpen className="size-4" />
-            </div>
             <div>
-              <h2 className="font-display text-base font-bold text-ink">JAMB UTME Subject Offerings</h2>
-              <p className="text-xs text-muted">Core 5 subjects available on the platform</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { id: "physics", name: "Physics", status: "Syllabus Notes & CBT Prepared", highlight: true },
-              { id: "english", name: "Use of English", status: "Compulsory Core Subject", highlight: false },
-              { id: "chemistry", name: "Chemistry", status: "Notes & Question Bank Ready", highlight: false },
-              { id: "biology", name: "Biology", status: "Notes & Question Bank Ready", highlight: false },
-              { id: "mathematics", name: "Mathematics", status: "Notes & Question Bank Ready", highlight: false },
-            ].map((subj) => (
-              <div
-                key={subj.id}
-                className={`rounded-xl border p-4 space-y-1.5 transition-all ${
-                  subj.highlight
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-line bg-paper/50"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display text-sm font-bold text-ink">{subj.name}</h3>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      subj.highlight
-                        ? "bg-primary/15 text-primary"
-                        : "bg-line/60 text-muted"
-                    }`}
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                OCR Quality Mode
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {QUALITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() =>
+                      setLocalSettings((prev) => ({ ...prev, ocrQuality: opt.value }))
+                    }
+                    className={cn(
+                      "px-3 py-2 rounded-xl border text-xs font-semibold transition-colors",
+                      localSettings.ocrQuality === opt.value
+                        ? "border-primary bg-primary text-primary-fg"
+                        : "border-line bg-surface text-muted hover:border-primary hover:text-ink",
+                    )}
                   >
-                    Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted">{subj.status}</p>
+                    <span>{opt.label}</span>
+                    <span className="ml-1 text-[10px] opacity-60">{opt.hint}</span>
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Candidate Subject Selection & Exam Parameters */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sliders className="size-4" />
+              <p className="mt-1 text-xs text-muted">
+                Image preprocessing quality before sending to the OCR engine. Affects extraction
+                clarity and speed on this device.
+              </p>
             </div>
+
+            <div className="grid gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={localSettings.formulaDetection}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({ ...prev, formulaDetection: e.target.checked }))
+                  }
+                  className="rounded border-line text-primary accent-primary"
+                />
+                <span className="text-sm text-ink">Enable formula/LaTeX detection in OCR</span>
+              </label>
+              <p className="mt-1 text-xs text-muted">
+                When enabled, the OCR engine converts inline math expressions to KaTeX LaTeX
+                notation during extraction.
+              </p>
+            </div>
+
             <div>
-              <h2 className="font-display text-base font-bold text-ink">Default CBT Examination Parameters</h2>
-              <p className="text-xs text-muted">Question distribution and exam timing rules</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Compulsory Subject Rule</label>
-              <input
-                type="text"
-                value={form.compulsorySubject}
-                disabled
-                className="w-full rounded-xl border border-line bg-paper px-3.5 py-2.5 text-xs text-muted cursor-not-allowed"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Total Required Subjects</label>
-              <input
-                type="number"
-                value={form.requiredSubjectCount}
-                disabled
-                className="w-full rounded-xl border border-line bg-paper px-3.5 py-2.5 text-xs text-muted cursor-not-allowed"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Active Syllabus Cohort</label>
-              <input
-                type="text"
-                value={form.activeSyllabusCohort}
-                onChange={(e) => setForm({ ...form, activeSyllabusCohort: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="2025/2026 Academic Session"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">English Question Count</label>
-              <input
-                type="number"
-                min={10}
-                max={100}
-                value={form.cbtEnglishQuestions}
-                onChange={(e) => setForm({ ...form, cbtEnglishQuestions: Number(e.target.value) || 60 })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Elective Subject Question Count</label>
-              <input
-                type="number"
-                min={10}
-                max={100}
-                value={form.cbtOtherSubjectQuestions}
-                onChange={(e) => setForm({ ...form, cbtOtherSubjectQuestions: Number(e.target.value) || 40 })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Standard CBT Exam Time Limit (Mins)</label>
-              <input
-                type="number"
-                min={15}
-                max={300}
-                value={form.cbtExamDurationMinutes}
-                onChange={(e) => setForm({ ...form, cbtExamDurationMinutes: Number(e.target.value) || 120 })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-          </div>
-
-          {/* Calculated Dynamic Questions Summary */}
-          <div className="flex items-center justify-between rounded-xl bg-primary/10 border border-primary/20 px-4 py-3 text-xs text-primary font-medium">
-            <span>Calculated Total UTME Examination Questions:</span>
-            <span className="font-bold text-sm">
-              {form.cbtEnglishQuestions} + (3 × {form.cbtOtherSubjectQuestions}) = {totalQuestions} Questions
-            </span>
-          </div>
-        </div>
-
-        {/* Learning & Exam Behaviour Switches */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sliders className="size-4" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-bold text-ink">Learning & Quiz Engine Switches</h2>
-              <p className="text-xs text-muted">Controls candidate review capabilities and randomization</p>
-            </div>
-          </div>
-
-          <div className="space-y-3.5 divide-y divide-line/60">
-            {[
-              {
-                id: "allowPostExamReview",
-                label: "Allow Post-Exam Question Review",
-                desc: "Candidates can review full questions, options, and explanations after submitting CBT exams.",
-                val: form.allowPostExamReview,
-                setter: (v: boolean) => setForm({ ...form, allowPostExamReview: v }),
-              },
-              {
-                id: "showDetailedExplanations",
-                label: "Show Step-by-Step Solution Explanations",
-                desc: "Display detailed pedagogical formulas and step-by-step reasoning in exam review.",
-                val: form.showDetailedExplanations,
-                setter: (v: boolean) => setForm({ ...form, showDetailedExplanations: v }),
-              },
-              {
-                id: "instantQuizFeedback",
-                label: "Instant Feedback in Practice Mode",
-                desc: "Reveal correct answer immediately upon option selection during topical practice quizzes.",
-                val: form.instantQuizFeedback,
-                setter: (v: boolean) => setForm({ ...form, instantQuizFeedback: v }),
-              },
-              {
-                id: "shuffleQuestions",
-                label: "Randomise Question Sequence",
-                desc: "Shuffle question order for every candidate attempting a CBT exam session.",
-                val: form.shuffleQuestions,
-                setter: (v: boolean) => setForm({ ...form, shuffleQuestions: v }),
-              },
-              {
-                id: "shuffleOptions",
-                label: "Randomise Multiple Choice Options (A-D)",
-                desc: "Shuffle option choices A, B, C, D to discourage rote memorization.",
-                val: form.shuffleOptions,
-                setter: (v: boolean) => setForm({ ...form, shuffleOptions: v }),
-              },
-            ].map((item, idx) => (
-              <div key={item.id} className={`flex items-center justify-between ${idx > 0 ? "pt-3.5" : ""}`}>
-                <div className="space-y-0.5 max-w-xl">
-                  <span className="text-xs font-semibold text-ink block">{item.label}</span>
-                  <p className="text-[11px] text-muted">{item.desc}</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={item.val}
-                    onChange={(e) => item.setter(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Save Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold text-primary-fg shadow-xs hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            <Check className="size-4" />
-            Save Academic Settings
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// ============================================================================
-// 3. NOTIFICATIONS & ALERTS SETTINGS VIEW
-// ============================================================================
-function NotificationSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const notifications = useSettingsStore((s) => s.notifications);
-  const updateNotificationSettings = useSettingsStore((s) => s.updateNotificationSettings);
-
-  const [form, setForm] = useState({ ...notifications });
-
-  useEffect(() => {
-    setForm({ ...notifications });
-  }, [notifications]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateNotificationSettings(form);
-    showToast("Notification preferences saved successfully.");
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Notifications & Alerts</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Notifications & Alerts Settings
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Manage candidate expiry notifications, payment receipts, and administrative alerts.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      {/* Channel Delivery Status Notice Banner */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex items-start gap-3.5">
-        <Info className="size-5 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1 text-xs text-ink leading-relaxed">
-          <p className="font-semibold">Local Notification Queue Active</p>
-          <p className="text-muted">
-            SMS & Email gateways (Termii, SendGrid, Twilio) can be configured below. Event triggers are logged in the activity ledger.
-          </p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Student Expiry Reminders */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Bell className="size-4" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-bold text-ink">Student Subscription Expiry Reminders</h2>
-              <p className="text-xs text-muted">Automated reminders sent to candidates approaching access expiry</p>
-            </div>
-          </div>
-
-          <div className="space-y-3.5 divide-y divide-line/60">
-            {[
-              {
-                id: "notifyExpiry7Days",
-                label: "Send reminder 7 days before subscription expiry",
-                desc: "Alert candidates a week prior to expiration so they can prepare to re-subscribe.",
-                val: form.notifyExpiry7Days,
-                setter: (v: boolean) => setForm({ ...form, notifyExpiry7Days: v }),
-              },
-              {
-                id: "notifyExpiry3Days",
-                label: "Send reminder 3 days before subscription expiry",
-                desc: "High-priority notice highlighting upcoming expiration date.",
-                val: form.notifyExpiry3Days,
-                setter: (v: boolean) => setForm({ ...form, notifyExpiry3Days: v }),
-              },
-              {
-                id: "notifyExpiry1Day",
-                label: "Send final reminder 1 day before subscription expiry",
-                desc: "Urgent notification sent 24 hours prior to access revocation.",
-                val: form.notifyExpiry1Day,
-                setter: (v: boolean) => setForm({ ...form, notifyExpiry1Day: v }),
-              },
-              {
-                id: "notifyOnExpiryDay",
-                label: "Send notification on expiry day",
-                desc: "Informs candidate that their paid period has concluded.",
-                val: form.notifyOnExpiryDay,
-                setter: (v: boolean) => setForm({ ...form, notifyOnExpiryDay: v }),
-              },
-              {
-                id: "notifyPaymentReceipt",
-                label: "Send automatic payment receipt",
-                desc: "Dispatch receipt notification upon successful subscription payment.",
-                val: form.notifyPaymentReceipt,
-                setter: (v: boolean) => setForm({ ...form, notifyPaymentReceipt: v }),
-              },
-              {
-                id: "notifyWeeklyExamAvailable",
-                label: "Send weekly CBT exam availability alert",
-                desc: "Notify enrolled candidates when new weekly mock exams are published.",
-                val: form.notifyWeeklyExamAvailable,
-                setter: (v: boolean) => setForm({ ...form, notifyWeeklyExamAvailable: v }),
-              },
-            ].map((item, idx) => (
-              <div key={item.id} className={`flex items-center justify-between ${idx > 0 ? "pt-3.5" : ""}`}>
-                <div className="space-y-0.5 max-w-xl">
-                  <span className="text-xs font-semibold text-ink block">{item.label}</span>
-                  <p className="text-[11px] text-muted">{item.desc}</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={item.val}
-                    onChange={(e) => item.setter(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Admin Alerts */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <ShieldCheck className="size-4" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-bold text-ink">Administrative Platform Alerts</h2>
-              <p className="text-xs text-muted">System alerts sent to administrators for platform events</p>
-            </div>
-          </div>
-
-          <div className="space-y-3.5 divide-y divide-line/60">
-            {[
-              {
-                id: "notifyAdminNewStudent",
-                label: "Alert admin on new student sign-up",
-                desc: "Notify Baba Ne when a candidate creates a new account on Richmirabel.",
-                val: form.notifyAdminNewStudent,
-                setter: (v: boolean) => setForm({ ...form, notifyAdminNewStudent: v }),
-              },
-              {
-                id: "notifyAdminPaymentSuccess",
-                label: "Alert admin on successful subscription payment",
-                desc: "Instant notification upon receipt of candidate renewal or new subscription.",
-                val: form.notifyAdminPaymentSuccess,
-                setter: (v: boolean) => setForm({ ...form, notifyAdminPaymentSuccess: v }),
-              },
-              {
-                id: "notifyAdminFailedPayment",
-                label: "Alert admin on failed payment attempt",
-                desc: "Flag payment gateway declines for immediate investigation.",
-                val: form.notifyAdminFailedPayment,
-                setter: (v: boolean) => setForm({ ...form, notifyAdminFailedPayment: v }),
-              },
-              {
-                id: "notifyAdminDailyDigest",
-                label: "Send daily administrative activity summary",
-                desc: "Receive a aggregated daily report of student registrations and CBT attempts.",
-                val: form.notifyAdminDailyDigest,
-                setter: (v: boolean) => setForm({ ...form, notifyAdminDailyDigest: v }),
-              },
-            ].map((item, idx) => (
-              <div key={item.id} className={`flex items-center justify-between ${idx > 0 ? "pt-3.5" : ""}`}>
-                <div className="space-y-0.5 max-w-xl">
-                  <span className="text-xs font-semibold text-ink block">{item.label}</span>
-                  <p className="text-[11px] text-muted">{item.desc}</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={item.val}
-                    onChange={(e) => item.setter(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Save Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold text-primary-fg shadow-xs hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            <Check className="size-4" />
-            Save Notification Preferences
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// ============================================================================
-// 4. GEMINI AI & OCR CONFIGURATION VIEW
-// ============================================================================
-function AiSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const aiPreferences = useSettingsStore((s) => s.ai);
-  const updateAiPreferences = useSettingsStore((s) => s.updateAiPreferences);
-
-  const [form, setForm] = useState({ ...aiPreferences });
-  const [serverStatus, setServerStatus] = useState<{
-    configured: boolean;
-    model: string;
-    statusText: string;
-    loading: boolean;
-  }>({
-    configured: true,
-    model: aiPreferences.defaultModel,
-    statusText: "Checking...",
-    loading: true,
-  });
-
-  const [testResult, setTestResult] = useState<{
-    loading: boolean;
-    success?: boolean;
-    message?: string;
-  }>({ loading: false });
-
-  // Fetch real AI status on mount
-  useEffect(() => {
-    fetch("/api/admin/ai-status")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.ok) {
-          setServerStatus({
-            configured: data.configured,
-            model: data.model || aiPreferences.defaultModel,
-            statusText: data.statusText || (data.configured ? "Configured" : "Not configured"),
-            loading: false,
-          });
-          if (data.model) {
-            setForm((prev) => ({ ...prev, defaultModel: data.model }));
-          }
-        } else {
-          setServerStatus((prev) => ({ ...prev, loading: false, statusText: "Unknown" }));
-        }
-      })
-      .catch(() => {
-        setServerStatus((prev) => ({ ...prev, loading: false, statusText: "Offline" }));
-      });
-  }, []);
-
-  const handleTestConnection = async () => {
-    setTestResult({ loading: true });
-    try {
-      const res = await fetch("/api/admin/test-ai", { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        setTestResult({ loading: false, success: true, message: data.message });
-      } else {
-        setTestResult({ loading: false, success: false, message: data.message || "Connection failed." });
-      }
-    } catch (err: any) {
-      setTestResult({ loading: false, success: false, message: err?.message || "Error connecting to AI endpoint." });
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    updateAiPreferences(form);
-
-    // Sync model with server
-    try {
-      await fetch("/api/admin/set-model", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: form.defaultModel }),
-      });
-    } catch {}
-
-    showToast("Gemini AI & OCR preferences updated successfully.");
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Gemini AI & OCR</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Gemini AI & OCR Configuration
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Configure server-side Gemini vision models, document extraction, KaTeX LaTeX detection, and test live AI status.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      {/* Real Gemini Connection Card */}
-      <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-        <div className="flex items-center justify-between border-b border-line pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sparkles className="size-4" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-bold text-ink">Server-Side Gemini AI Engine</h2>
-              <p className="text-xs text-muted">Connected via Google GenAI TypeScript SDK</p>
-            </div>
-          </div>
-
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-              serverStatus.configured
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-            }`}
-          >
-            {serverStatus.configured ? <CheckCircle2 className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
-            {serverStatus.loading ? "Checking..." : serverStatus.statusText}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-line bg-paper/50 p-4 space-y-1">
-            <span className="text-[11px] text-muted font-medium block">Integration Provider</span>
-            <p className="text-xs font-bold text-ink">Google Gemini Vision (@google/genai)</p>
-          </div>
-
-          <div className="rounded-xl border border-line bg-paper/50 p-4 space-y-1">
-            <span className="text-[11px] text-muted font-medium block">API Proxy Endpoint</span>
-            <p className="text-xs font-bold text-ink">Server-side proxy (/api/extract-notes)</p>
-          </div>
-        </div>
-
-        {/* Live Test Button */}
-        <div className="space-y-3 pt-2">
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testResult.loading}
-            className="inline-flex items-center gap-2 rounded-full border border-primary text-primary hover:bg-primary/10 px-5 py-2 text-xs font-semibold transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`size-3.5 ${testResult.loading ? "animate-spin" : ""}`} />
-            {testResult.loading ? "Testing Gemini API..." : "Test Gemini API Connection"}
-          </button>
-
-          {testResult.message && (
-            <div
-              className={`rounded-xl border p-3.5 text-xs ${
-                testResult.success
-                  ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
-                  : "border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300"
-              }`}
-            >
-              <p className="font-semibold">{testResult.success ? "Connection Verified" : "Test Failed"}</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed">{testResult.message}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Model Selection & OCR Options */}
-        <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-          <div className="flex items-center gap-3 border-b border-line pb-4">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sliders className="size-4" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-bold text-ink">Model & Extraction Preferences</h2>
-              <p className="text-xs text-muted">Select active Gemini model and mathematical OCR rules</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">Active Gemini Model</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                LaTeX Output Preference
+              </label>
               <select
-                value={form.defaultModel}
-                onChange={(e) => setForm({ ...form, defaultModel: e.target.value })}
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="gemini-2.5-flash">gemini-2.5-flash (Recommended - Fast OCR)</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro (High Reasoning)</option>
-                <option value="gemini-3.8-flash">gemini-3.8-flash (Fallback Model)</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-ink">OCR Quality Mode</label>
-              <select
-                value={form.ocrQualityMode}
+                value={localSettings.latexOutput}
                 onChange={(e) =>
-                  setForm({ ...form, ocrQualityMode: e.target.value as "high_precision" | "standard" })
+                  setLocalSettings((prev) => ({ ...prev, latexOutput: e.target.value as "katex" | "latex" }))
                 }
-                className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
               >
-                <option value="high_precision">High Precision (Recommended for Math & Physics)</option>
-                <option value="standard">Standard Speed (General Notes)</option>
+                {LATEX_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-ink">AI Model Temperature</label>
-                <span className="text-xs font-mono font-bold text-primary">{form.temperature}</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={form.temperature}
-                onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
-                className="w-full accent-primary cursor-pointer"
-              />
-              <p className="text-[11px] text-muted">
-                Lower values (0.0 - 0.2) ensure deterministic, highly accurate factual OCR and math transcription.
+              <p className="mt-1 text-xs text-muted">
+                Preferred rendering format for mathematical expressions in extracted notes.
               </p>
             </div>
           </div>
 
-          <div className="space-y-3.5 pt-3 border-t border-line">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <span className="text-xs font-semibold text-ink block">Auto-detect Mathematical Formulas</span>
-                <p className="text-[11px] text-muted">
-                  Automatically convert handwritten equations and physics formulas into structured KaTeX LaTeX blocks.
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                <input
-                  type="checkbox"
-                  checked={form.ocrAutoDetectFormulas}
-                  onChange={(e) => setForm({ ...form, ocrAutoDetectFormulas: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
+          <div className="border-t border-line pt-6 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={resetDefaults}
+                className="min-h-10 rounded-full border border-line px-4 text-sm font-semibold text-muted disabled:opacity-50 hover:bg-paper"
+              >
+                <RotateCw className="size-4 mr-2" /> Reset to Defaults
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void saveSettings()}
+                className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save AI Settings"}
+              </button>
             </div>
-
-            <div className="flex items-center justify-between pt-3">
-              <div className="space-y-0.5">
-                <span className="text-xs font-semibold text-ink block">Default KaTeX LaTeX Delimiters</span>
-                <p className="text-[11px] text-muted">
-                  Enforce standard LaTeX formatting without raw markdown backticks for immediate web math rendering.
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                <input
-                  type="checkbox"
-                  checked={form.ocrDefaultLatex}
-                  onChange={(e) => setForm({ ...form, ocrDefaultLatex: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-line peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
+            <SettingsFeedback message={message} />
           </div>
-        </div>
 
-        {/* Security Disclosure */}
-        <div className="rounded-2xl border border-line bg-surface p-5 flex items-start gap-3.5 shadow-2xs">
-          <Shield className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="space-y-1 text-xs text-ink leading-relaxed">
-            <p className="font-semibold">Zero Client-Side Key Exposure</p>
-            <p className="text-muted">
-              Gemini API credentials are securely managed on the backend proxy server (<code className="text-primary font-mono">/api/*</code>). API keys are never bundled into client JavaScript or exposed to candidate browsers.
+          <div className="border-t border-line pt-4 mt-6 px-4 pb-4">
+            <p className="text-xs text-muted">
+              <strong>Persistence:</strong> API key, model and temperatures are stored on the
+              server and apply to every device and every Gemini feature. OCR quality, formula
+              detection and LaTeX format are device preferences kept in this browser.
             </p>
           </div>
-        </div>
+        </>
+      )}
+    </AdminPanel>
+  );
+}
 
-        {/* Save Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold text-primary-fg shadow-xs hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20"
+/* ------------------------------------------------------------------------- */
+/* Payments & Integrations                                                    */
+/* ------------------------------------------------------------------------- */
+
+function PaymentsPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+  const [publicKey, setPublicKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const value: Record<string, string> = {};
+    if (publicKey.trim()) value.paystack_public_key = publicKey.trim();
+    if (secretKey.trim()) value.paystack_secret_key = secretKey.trim();
+    if (Object.keys(value).length === 0) {
+      setMessage({ ok: false, text: "Enter a public and/or secret key first." });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updatePlatformSetting("payments", value);
+      setPublicKey("");
+      setSecretKey("");
+      setMessage({ ok: true, text: "Paystack credentials saved." });
+      await reload();
+    } catch (err) {
+      setMessage({
+        ok: false,
+        text: readSettingsError(err, "Could not save the Paystack credentials."),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clearKeys() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updatePlatformSetting("payments", {
+        paystack_public_key: "",
+        paystack_secret_key: "",
+      });
+      setMessage({ ok: true, text: "Saved credentials cleared." });
+      await reload();
+    } catch (err) {
+      setMessage({
+        ok: false,
+        text: readSettingsError(err, "Could not clear the credentials."),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading payment settings…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
+
+      {data && (
+        <>
+          <AdminPanel
+            title="Paystack status"
+            description="Card, bank transfer and USSD checkout for subscriptions."
           >
-            <Check className="size-4" />
-            Save AI Settings
-          </button>
-        </div>
-      </form>
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Status">
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                    data.payments.configured
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                      : "bg-amber-50 text-amber-700 border-amber-100",
+                  )}
+                >
+                  {data.payments.configured ? "Configured" : "Not configured"}
+                </span>
+              </AdminField>
+              <AdminField label="Credential source">
+                {data.payments.source === "settings"
+                  ? "Saved in admin settings"
+                  : data.payments.source === "environment"
+                    ? "Server environment"
+                    : "No credentials"}
+              </AdminField>
+              <AdminField label="Public key hint">
+                <span className="font-mono text-xs">
+                  {data.payments.public_key_hint || "—"}
+                </span>
+              </AdminField>
+              <AdminField label="Secret key hint">
+                <span className="font-mono text-xs">
+                  {data.payments.secret_key_hint || "—"}
+                </span>
+              </AdminField>
+              <AdminField label="API base">
+                <span className="font-mono text-xs">{data.payments.base_url}</span>
+              </AdminField>
+              <AdminField label="Pricing plans">
+                <Link
+                  to="/admin/subscriptions"
+                  className="font-semibold text-primary hover:underline"
+                >
+                  Manage plans
+                </Link>
+              </AdminField>
+            </div>
+            <div className="border-t border-line px-4 py-3">
+              <UpdatedStamp at={data.payments.updated_at} by={data.payments.updated_by} />
+            </div>
+          </AdminPanel>
+
+          <AdminPanel
+            title="Paystack credentials"
+            description="Enter your keys when your Paystack account is available. Keys are stored server-side, used for payment initialisation, verification and webhook signing, and never returned to the browser."
+          >
+            <form onSubmit={save} className="space-y-4 p-4">
+              <AdminField label="Public key (pk_…)">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={publicKey}
+                  onChange={(event) => setPublicKey(event.target.value)}
+                  placeholder={data.payments.public_key_hint || "pk_test_…"}
+                  className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+                />
+              </AdminField>
+              <AdminField label="Secret key (sk_…)">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={secretKey}
+                  onChange={(event) => setSecretKey(event.target.value)}
+                  placeholder={data.payments.secret_key_hint || "sk_test_…"}
+                  className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none"
+                />
+              </AdminField>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => void clearKeys()}
+                  disabled={saving}
+                  className="min-h-10 rounded-full border border-line px-4 text-sm font-semibold text-muted hover:bg-paper disabled:opacity-50"
+                >
+                  Clear saved keys
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || (!publicKey.trim() && !secretKey.trim())}
+                  className="min-h-10 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save credentials"}
+                </button>
+              </div>
+              <SettingsFeedback message={message} />
+            </form>
+          </AdminPanel>
+        </>
+      )}
     </div>
   );
 }
 
-// ============================================================================
-// 5. ADMIN ACCESS & SECURITY SETTINGS VIEW
-// ============================================================================
-function SecuritySettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const adminProfile = useSettingsStore((s) => s.adminProfile);
-  const updateAdminProfile = useSettingsStore((s) => s.updateAdminProfile);
+/* ------------------------------------------------------------------------- */
+/* System Status                                                              */
+/* ------------------------------------------------------------------------- */
 
-  const [profileForm, setProfileForm] = useState({ ...adminProfile });
-  const [passForm, setPassForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-  const [passError, setPassError] = useState<string | null>(null);
+function apiOrigin(): string {
+  return API_CONFIG.baseUrl.replace(/\/api\/v1\/?$/, "");
+}
+
+function SystemPanel() {
+  const { data, loading, error, reload } = usePlatformSettings();
+  const refreshAll = useSession((state) => state.refreshAll);
+  const sessionStatus = useSession((state) => state.status);
+  const role = useSession((state) => state.role);
+  const [health, setHealth] = useState<{
+    ok: boolean;
+    service: string;
+    database: string;
+    latencyMs: number;
+  } | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [backendTest, setBackendTest] = useState<SettingsMessage>(null);
+  const [backendBusy, setBackendBusy] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+
+  const checkHealth = useCallback(async () => {
+    setChecking(true);
+    setHealthError(null);
+    const started = performance.now();
+    try {
+      const res = await fetch(`${apiOrigin()}/health`);
+      const body = (await res.json()) as { ok: boolean; service: string; database: string };
+      setHealth({
+        ok: Boolean(body.ok),
+        service: body.service,
+        database: body.database,
+        latencyMs: Math.round(performance.now() - started),
+      });
+    } catch {
+      setHealth(null);
+      setHealthError("Could not reach the backend health endpoint.");
+    } finally {
+      setChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
-    setProfileForm({ ...adminProfile });
-  }, [adminProfile]);
+    void checkHealth();
+    adminApi
+      .aiStatus()
+      .then(setAiStatus)
+      .catch(() => setAiStatus(null));
+  }, [checkHealth]);
 
-  const handleProfileSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateAdminProfile(profileForm);
-    showToast("Administrator profile updated successfully.");
-  };
-
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPassError(null);
-
-    if (!passForm.currentPassword) {
-      setPassError("Please enter your current password.");
-      return;
+  async function testBackend() {
+    setBackendBusy(true);
+    setBackendTest(null);
+    try {
+      const overview = await adminApi.overview();
+      setBackendTest({
+        ok: true,
+        text: `Connected. ${overview.totalStudents} students, ${overview.activeSubscriptions} active subscriptions.`,
+      });
+    } catch (err) {
+      setBackendTest({
+        ok: false,
+        text: readSettingsError(err, "Could not reach the backend. Check the API URL and try again."),
+      });
+    } finally {
+      setBackendBusy(false);
     }
-    if (passForm.newPassword.length < 6) {
-      setPassError("New password must be at least 6 characters.");
-      return;
-    }
-    if (passForm.newPassword !== passForm.confirmPassword) {
-      setPassError("New passwords do not match.");
-      return;
-    }
+  }
 
-    setPassForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-    showToast("Administrator password updated successfully.");
-  };
+  async function refreshData() {
+    setBackendBusy(true);
+    try {
+      await refreshAll();
+      setLastRefreshed(new Date().toLocaleString("en-NG"));
+      setBackendTest({ ok: true, text: "Backend data refreshed." });
+    } catch (err) {
+      setBackendTest({
+        ok: false,
+        text: readSettingsError(err, "Could not refresh backend data."),
+      });
+    } finally {
+      setBackendBusy(false);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Admin Access & Security</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Admin Access & Security
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Manage administrator profile details, security access, and authentication controls.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
+    <div className="space-y-4">
+      {loading && !data && <AdminLoading label="Loading system status…" />}
+      {error && !data && <AdminError message={error} onRetry={() => void reload()} />}
 
-      {/* Administrator Access Notice */}
-      <div className="rounded-2xl border border-line bg-surface p-5 flex items-start gap-3.5">
-        <Info className="size-5 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1 text-xs text-ink leading-relaxed">
-          <p className="font-semibold">Administrator Access Control</p>
-          <p className="text-muted">
-            Administrative permissions are managed securely. Default administrator access is assigned to <code className="font-mono bg-paper px-1.5 py-0.5 rounded border border-line">admin@gmail.com</code>.
-          </p>
-        </div>
-      </div>
-
-      {/* Admin Profile Details */}
-      <form onSubmit={handleProfileSubmit} className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-        <div className="flex items-center gap-3 border-b border-line pb-4">
-          <div className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-fg font-bold font-display">
-            BN
-          </div>
-          <div>
-            <h2 className="font-display text-base font-bold text-ink">Administrator Profile</h2>
-            <p className="text-xs text-muted">{adminProfile.role}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
-              <User className="size-3.5 text-muted" /> Full Name
-            </label>
-            <input
-              type="text"
-              value={profileForm.name}
-              onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              required
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
-              <Mail className="size-3.5 text-muted" /> Administrator Email
-            </label>
-            <input
-              type="email"
-              value={profileForm.email}
-              onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              required
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
-              <Phone className="size-3.5 text-muted" /> Phone Number
-            </label>
-            <input
-              type="text"
-              value={profileForm.phone}
-              onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink">Department / Focus</label>
-            <input
-              type="text"
-              value={profileForm.department}
-              onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold text-primary-fg shadow-xs hover:bg-primary/90 transition-colors"
+      {data && (
+        <>
+          <AdminPanel
+            title="Backend health"
+            description="Live check of the FastAPI service and its database."
+            actions={
+              <button
+                type="button"
+                onClick={() => void checkHealth()}
+                disabled={checking}
+                className="inline-flex min-h-9 items-center gap-2 rounded-full border border-line bg-surface px-4 text-xs font-semibold text-ink hover:bg-paper disabled:opacity-50"
+              >
+                <RefreshCw className={cn("size-3.5", checking && "animate-spin")} aria-hidden />
+                {checking ? "Checking…" : "Re-check"}
+              </button>
+            }
           >
-            <Check className="size-4" />
-            Save Profile Details
-          </button>
-        </div>
-      </form>
-
-      {/* Password Update Form */}
-      <form onSubmit={handlePasswordSubmit} className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-        <div className="flex items-center gap-3 border-b border-line pb-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <KeyRound className="size-4" />
-          </div>
-          <div>
-            <h2 className="font-display text-base font-bold text-ink">Change Administrator Password</h2>
-            <p className="text-xs text-muted">Update security credentials for your admin account</p>
-          </div>
-        </div>
-
-        {passError && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3.5 text-xs text-red-600 font-medium">
-            {passError}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink">Current Password</label>
-            <input
-              type="password"
-              value={passForm.currentPassword}
-              onChange={(e) => setPassForm({ ...passForm, currentPassword: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink">New Password</label>
-            <input
-              type="password"
-              value={passForm.newPassword}
-              onChange={(e) => setPassForm({ ...passForm, newPassword: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-ink">Confirm New Password</label>
-            <input
-              type="password"
-              value={passForm.confirmPassword}
-              onChange={(e) => setPassForm({ ...passForm, confirmPassword: e.target.value })}
-              className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="••••••••"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-5 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-          >
-            Update Security Password
-          </button>
-        </div>
-      </form>
-
-      {/* Permissions Matrix */}
-      <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-        <div className="flex items-center gap-3 border-b border-line pb-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Lock className="size-4" />
-          </div>
-          <div>
-            <h2 className="font-display text-base font-bold text-ink">Administrative Permissions Matrix</h2>
-            <p className="text-xs text-muted">Role capabilities across platform modules</p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-line text-muted">
-                <th className="pb-3 font-semibold">Module</th>
-                <th className="pb-3 font-semibold">Super Administrator</th>
-                <th className="pb-3 font-semibold">Content Editor</th>
-                <th className="pb-3 font-semibold">Support Agent</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line/60">
-              {[
-                { module: "Student Accounts & Subscriptions", super: "Full Access", editor: "View Only", support: "Manage Status" },
-                { module: "Subjects, Notes & CBT Generator", super: "Full Access", editor: "Full Access", support: "View Only" },
-                { module: "Payments & Revenue Ledger", super: "Full Access", editor: "No Access", support: "View Transactions" },
-                { module: "Platform Settings & AI Config", super: "Full Access", editor: "No Access", support: "No Access" },
-              ].map((row, i) => (
-                <tr key={i} className="text-ink">
-                  <td className="py-3 font-medium">{row.module}</td>
-                  <td className="py-3 text-emerald-600 dark:text-emerald-400 font-semibold">{row.super}</td>
-                  <td className="py-3 text-muted">{row.editor}</td>
-                  <td className="py-3 text-muted">{row.support}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// 6. INTEGRATIONS & SYSTEM STATUS VIEW
-// ============================================================================
-function IntegrationsSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Integrations & Status</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Integrations & System Status
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Overview of connected services, storage engine health, and platform subsystems.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      {/* Services Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          {
-            name: "Google Gemini AI Proxy",
-            type: "OCR & CBT Intelligence",
-            status: "Connected",
-            desc: "Server-side proxy processing vision note extractions and CBT question generation.",
-            icon: Sparkles,
-            active: true,
-          },
-          {
-            name: "Student Registry Store",
-            type: "Persistent State",
-            status: "Operational",
-            desc: "Local Zustand store with persistent client state maintaining candidate accounts.",
-            icon: Server,
-            active: true,
-          },
-          {
-            name: "Subscriptions Access Rules",
-            type: "Access Control",
-            status: "Enforced",
-            desc: "Monthly billing enforcement rules for paid candidate workspace features.",
-            icon: ShieldCheck,
-            active: true,
-          },
-          {
-            name: "Payments Sandbox Ledger",
-            type: "Transaction History",
-            status: "Ready",
-            desc: "Frontend payment ledger simulating subscriber billing and grant history.",
-            icon: DollarSign,
-            active: true,
-          },
-          {
-            name: "Browser Storage Engine",
-            type: "LocalStorage",
-            status: "Healthy",
-            desc: "Client-side storage maintaining offline syllabus data and candidate attempts.",
-            icon: Layers,
-            active: true,
-          },
-          {
-            name: "SMS & Email Services",
-            type: "Messaging Gateway",
-            status: "Local Queue",
-            desc: "External provider integration postponed. Notifications processed locally.",
-            icon: Mail,
-            active: false,
-          },
-        ].map((srv, idx) => {
-          const Icon = srv.icon;
-          return (
-            <div key={idx} className="rounded-2xl border border-line bg-surface p-5 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Icon className="size-4" />
-                </div>
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                    srv.active
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                      : "bg-paper text-muted border border-line"
-                  }`}
-                >
-                  {srv.active ? <CheckCircle2 className="size-3" /> : <Info className="size-3" />}
-                  {srv.status}
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Service">
+                <span className="inline-flex items-center gap-2">
+                  <Activity className="size-4 text-muted" aria-hidden />
+                  {health?.service ?? (healthError ? "Unreachable" : "…")}
                 </span>
-              </div>
-
-              <div>
-                <h3 className="font-display text-sm font-bold text-ink">{srv.name}</h3>
-                <span className="text-[10px] text-muted font-medium">{srv.type}</span>
-                <p className="mt-1.5 text-xs text-muted leading-relaxed">{srv.desc}</p>
-              </div>
+              </AdminField>
+              <AdminField label="Status">
+                {healthError ? (
+                  <span className="inline-flex items-center gap-1.5 text-red-600">
+                    <XCircle className="size-4" aria-hidden />
+                    {healthError}
+                  </span>
+                ) : health ? (
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                      health.ok
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                        : "bg-red-50 text-red-700 border-red-100",
+                    )}
+                  >
+                    {health.ok ? "Operational" : "Degraded"}
+                  </span>
+                ) : (
+                  "…"
+                )}
+              </AdminField>
+              <AdminField label="Database">{health?.database ?? "—"}</AdminField>
+              <AdminField label="Response time">
+                {health ? `${health.latencyMs} ms` : "—"}
+              </AdminField>
             </div>
-          );
-        })}
-      </div>
+          </AdminPanel>
 
-      {/* Quick Navigation Cards */}
-      <div className="rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xs">
-        <h2 className="font-display text-base font-bold text-ink">Related System Configurations</h2>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            to="/admin/settings/ai"
-            className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:border-primary hover:text-primary transition-colors"
-          >
-            <Sparkles className="size-3.5" />
-            Configure Gemini AI Settings
-          </Link>
-          <Link
-            to="/admin/students"
-            className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:border-primary hover:text-primary transition-colors"
-          >
-            <User className="size-3.5" />
-            View Student Registry
-          </Link>
-          <Link
-            to="/admin/payments"
-            className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:border-primary hover:text-primary transition-colors"
-          >
-            <DollarSign className="size-3.5" />
-            View Payments Ledger
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// 7. ADVANCED / DEVELOPER TOOLS SETTINGS VIEW
-// ============================================================================
-function AdvancedSettingsView({ showToast }: { showToast: (msg: string) => void }) {
-  const resetSettingsToDefault = useSettingsStore((s) => s.resetSettingsToDefault);
-  const clearAllAttempts = useSession((s) => s.clearAllAttempts);
-  const resetContent = useContent((s) => s.resetContent);
-
-  const [activeModal, setActiveModal] = useState<"attempts" | "content" | "settings" | null>(null);
-
-  const handleConfirmAction = () => {
-    if (activeModal === "attempts") {
-      clearAllAttempts();
-      showToast("Candidate quiz and CBT exam attempt history cleared.");
-    } else if (activeModal === "content") {
-      resetContent();
-      showToast("Subjects catalog and physics topics restored to initial seed data.");
-    } else if (activeModal === "settings") {
-      resetSettingsToDefault();
-      showToast("All platform settings restored to factory defaults.");
-    }
-    setActiveModal(null);
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Breadcrumb */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-6">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-muted mb-2">
-            <Link to="/admin/settings" className="hover:text-primary transition-colors">
-              Settings
-            </Link>
-            <span>/</span>
-            <span className="font-semibold text-ink">Advanced / Developer Tools</span>
-          </nav>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Advanced / Developer Tools
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Maintenance controls, local data management, and confirmation-protected system resets.
-          </p>
-        </div>
-        <Link
-          to="/admin/settings"
-          className="inline-flex items-center gap-2 self-start sm:self-auto rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Settings
-        </Link>
-      </div>
-
-      {/* Confirmation Modal */}
-      {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
-                <AlertTriangle className="size-5" />
-              </div>
-              <div>
-                <h3 className="font-display text-base font-bold text-ink">Confirm Maintenance Action</h3>
-                <p className="text-xs text-muted">This action modifies local persisted state</p>
-              </div>
+          <AdminPanel title="AI service" description="Current Gemini configuration as reported by the server.">
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="Gemini">
+                <span className="inline-flex items-center gap-2">
+                  <Cpu className="size-4 text-muted" aria-hidden />
+                  {aiStatus ? aiStatus.model : "…"}
+                </span>
+              </AdminField>
+              <AdminField label="Configuration">
+                {aiStatus ? (
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                      aiStatus.configured
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                        : "bg-red-50 text-red-700 border-red-100",
+                    )}
+                  >
+                    {aiStatus.statusText}
+                  </span>
+                ) : (
+                  "Unavailable"
+                )}
+              </AdminField>
+              <AdminField label="Provider">{aiStatus?.provider ?? "—"}</AdminField>
+              <AdminField label="Key hint">
+                <span className="font-mono text-xs">{aiStatus?.keyHint || "—"}</span>
+              </AdminField>
             </div>
+            <div className="border-t border-line px-4 py-3 text-xs text-muted">
+              <Link to="/admin/settings/ai" className="font-semibold text-primary hover:underline">
+                Manage Gemini settings
+              </Link>
+            </div>
+          </AdminPanel>
 
-            <p className="text-xs text-ink leading-relaxed">
-              {activeModal === "attempts" && "Are you sure you want to clear all candidate quiz and CBT exam attempt history? This action cannot be undone."}
-              {activeModal === "content" && "Are you sure you want to reset the subjects catalog and physics topics back to initial shipped seed data?"}
-              {activeModal === "settings" && "Are you sure you want to restore all platform settings across all 7 categories to factory default values?"}
+          <AdminPanel title="Connection" description="Backend API details and diagnostics.">
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+              <AdminField label="API base URL">
+                <span className="font-mono text-xs">{API_CONFIG.baseUrl}</span>
+              </AdminField>
+              <AdminField label="Request timeout">{API_CONFIG.timeoutMs / 1000}s</AdminField>
+              <AdminField label="Environment">
+                <span className="font-mono text-xs">{data.info.environment}</span>
+              </AdminField>
+              <AdminField label="Session status">{sessionStatus}</AdminField>
+              <AdminField label="Role">{role ?? "—"}</AdminField>
+              <AdminField label="Last refresh">{lastRefreshed ?? "Not requested"}</AdminField>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 border-t border-line p-4">
+              <button
+                type="button"
+                onClick={() => void testBackend()}
+                disabled={backendBusy}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-fg disabled:opacity-50"
+              >
+                <Plug className={cn("size-4", backendBusy && "animate-pulse")} aria-hidden />
+                {backendBusy ? "Working…" : "Test backend connection"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                disabled={backendBusy}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper disabled:opacity-50"
+              >
+                <RefreshCw className={cn("size-4", backendBusy && "animate-spin")} aria-hidden />
+                Refresh backend data
+              </button>
+              <Link
+                to="/admin/audit"
+                className="inline-flex min-h-10 items-center rounded-full border border-line bg-surface px-5 text-sm font-semibold text-ink hover:bg-paper"
+              >
+                View audit log
+              </Link>
+            </div>
+            {backendTest && (
+              <div className="border-t border-line p-4">
+                <SettingsFeedback message={backendTest} />
+              </div>
+            )}
+          </AdminPanel>
+
+          <div className="flex items-start gap-2 rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+            <p>
+              Settings changes are recorded in the{" "}
+              <Link to="/admin/audit" className="font-semibold text-primary hover:underline">
+                audit log
+              </Link>
+              . No destructive operations or data resets are available here.
             </p>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmAction}
-                className="rounded-full bg-red-600 text-white px-5 py-2 text-xs font-semibold hover:bg-red-700 transition-colors"
-              >
-                Confirm Reset
-              </button>
-            </div>
           </div>
-        </div>
+        </>
       )}
-
-      {/* Maintenance Controls */}
-      <div className="rounded-2xl border border-line bg-surface p-6 space-y-5 shadow-2xs">
-        <div className="flex items-center gap-3 border-b border-line pb-4">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Wrench className="size-4" />
-          </div>
-          <div>
-            <h2 className="font-display text-base font-bold text-ink">Local Data & State Management</h2>
-            <p className="text-xs text-muted">System actions for testing and demonstration reset</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl border border-line bg-paper/40">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-bold text-ink">Clear Candidate Attempt History</h3>
-              <p className="text-[11px] text-muted">Remove local candidate CBT exam and topical quiz score history.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveModal("attempts")}
-              className="inline-flex items-center gap-1.5 shrink-0 rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:border-red-500 hover:text-red-600 transition-colors"
-            >
-              <Trash2 className="size-3.5" />
-              Clear Attempts
-            </button>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl border border-line bg-paper/40">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-bold text-ink">Reset Subjects Catalog to Initial Seed</h3>
-              <p className="text-[11px] text-muted">Restore shipped physics notes, questions, and topics seed state.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveModal("content")}
-              className="inline-flex items-center gap-1.5 shrink-0 rounded-full border border-line bg-surface px-4 py-2 text-xs font-semibold text-ink hover:border-red-500 hover:text-red-600 transition-colors"
-            >
-              <RotateCcw className="size-3.5" />
-              Reset Content Seed
-            </button>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl border border-red-500/30 bg-red-500/5">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-bold text-red-600 dark:text-red-400">Restore Factory Settings Defaults</h3>
-              <p className="text-[11px] text-muted">Reset all general, academic, notification, AI, and profile settings to defaults.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveModal("settings")}
-              className="inline-flex items-center gap-1.5 shrink-0 rounded-full bg-red-600 text-white px-4 py-2 text-xs font-semibold hover:bg-red-700 transition-colors"
-            >
-              <RotateCcw className="size-3.5" />
-              Restore Settings Defaults
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

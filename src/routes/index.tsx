@@ -23,19 +23,19 @@ const faqs = [
   },
   {
     q: "What happens during the free trial?",
-    a: "You get 48 hours from the moment you finish setup. Notes and practice are open for those two days. After that, notes stay readable.",
+    a: "You get 48 hours from the moment you finish setup. Notes stay readable after the trial, but practice sets and CBT require an active plan.",
   },
   {
-    q: "How much does term access cost?",
-    a: "₦4,500 for the term, after your two free days.",
+    q: "How much does access cost?",
+    a: "₦4,500 per month (30 days) after your two free trial days. Renewing early extends your expiry.",
   },
   {
     q: "Can I track my progress?",
-    a: "Yes. After you submit a set, your best score for that topic is saved, and your dashboard points you to the topic to revisit.",
+    a: "Yes. After you submit a set, your score is saved to your account, and your dashboard points you to the topic to revisit.",
   },
   {
     q: "Can I use it on another phone?",
-    a: "Your progress is saved on the device you study on. Syncing across devices is coming.",
+    a: "Yes. Your account, progress, and payments are saved to Richmirabel and available wherever you sign in.",
   },
 ];
 

@@ -1,21 +1,21 @@
-import { findTopic } from "@/data/catalog";
 import type { Topic } from "@/data/catalog";
-import { apiClient } from "../api/client";
+import { contentApi, studentsApi } from "@/lib/backend";
+import { mapTopic } from "@/lib/mappers";
 import type { LessonRecord } from "./lessons.types";
 
 export class LessonsService {
   public async getTopic(topicId: string): Promise<Topic> {
-    try {
-      return await apiClient.get<Topic>(`/lessons/topics/${topicId}`);
-    } catch {
-      const match = findTopic(topicId);
-      if (!match) throw new Error("Topic not found");
-      return match.topic;
-    }
+    const topic = await contentApi.getTopic(topicId);
+    return mapTopic(topic);
   }
 
   public async recordCompletion(topicId: string, timeSpentSeconds = 0): Promise<LessonRecord> {
-    return apiClient.post<LessonRecord>(`/lessons/topics/${topicId}/complete`, { timeSpentSeconds });
+    const result = await studentsApi.completeLesson(topicId);
+    return {
+      topicId,
+      completedAt: result.completed_at,
+      timeSpentSeconds,
+    };
   }
 }
 

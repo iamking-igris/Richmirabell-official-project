@@ -2,122 +2,11 @@ import { create } from 'zustand';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { BlockType, NoteBlock, NoteDocument } from './note-schema';
 
-export const initialMockDocument: NoteDocument = {
-  subject: 'Physics',
-  topic: 'WAVES',
-  title: 'Waves',
-  subtitle: 'Wavelength, amplitude, frequency, and the wave equation.',
-  meta: '20 min · 4 questions · 2 theory',
-  blocks: [
-    {
-      id: 'b-0',
-      type: 'objectives',
-      items: [
-        'Define wavelength, amplitude, frequency, and period',
-        'Apply the wave equation v = fλ to calculate velocity, frequency, or wavelength',
-        'Distinguish between transverse and longitudinal wave motion',
-      ],
-    },
-    {
-      id: 'b-1',
-      type: 'heading',
-      text: '1. The Wave Equation',
-    },
-    {
-      id: 'b-2',
-      type: 'formula',
-      latex: 'v = f \\lambda',
-    },
-    {
-      id: 'b-3',
-      type: 'paragraph',
-      text: 'A wave is a disturbance that transfers energy through a medium or vacuum without permanently displacing the matter of the medium itself. The wave velocity depends on both frequency and wavelength.',
-    },
-    {
-      id: 'b-4',
-      type: 'diagram',
-      imageUrl: '/media/physics.jpg',
-      caption: 'Figure 1: Transverse wave profile displaying crests, troughs, wavelength (λ), and amplitude (A).',
-    },
-    {
-      id: 'b-5',
-      type: 'heading',
-      text: '2. Characteristics and Classification',
-    },
-    {
-      id: 'b-6',
-      type: 'paragraph',
-      text: 'Waves are categorized based on propagation characteristics into mechanical waves (requiring a material medium) and electromagnetic waves (which travel through free space). In transverse waves, particle oscillations are perpendicular to the wave propagation vector.',
-    },
-  ],
-};
-
-// Hardcoded mock extracted document for the AI extraction pipeline with auto-placed objectives
-export const mockExtractedDocument: NoteDocument = {
-  subject: 'Chemistry',
-  topic: 'ELECTROLYSIS',
-  title: 'Electrolysis & Ionic Theory',
-  subtitle: 'Chemical decomposition produced by passing an electric current through an electrolyte.',
-  meta: '18 min · 5 questions · 3 theory',
-  blocks: [
-    {
-      id: 'ext-0',
-      type: 'objectives',
-      items: [
-        'Define electrolysis, electrolytes, electrodes, and mobile ions',
-        "State and apply Faraday's First Law of Electrolysis (m = zIt)",
-        'Predict preferential discharge of cations and anions at electrodes',
-      ],
-    },
-    {
-      id: 'ext-1',
-      type: 'heading',
-      text: '1. Principles of Electrolysis',
-    },
-    {
-      id: 'ext-2',
-      type: 'paragraph',
-      text: 'Electrolysis is the process whereby ionic substances are decomposed (broken down) into simpler substances when an electric current is passed through them. The liquid or solution conducting the current contains mobile ions and is termed the electrolyte.',
-    },
-    {
-      id: 'ext-3',
-      type: 'formula',
-      latex: 'm = z \\cdot I \\cdot t = \\frac{M \\cdot I \\cdot t}{n \\cdot F}',
-    },
-    {
-      id: 'ext-4',
-      type: 'heading',
-      text: "2. Faraday's First Law of Electrolysis",
-    },
-    {
-      id: 'ext-5',
-      type: 'paragraph',
-      text: "Faraday's first law states that the mass (m) of an element liberated at an electrode during electrolysis is directly proportional to the quantity of electricity (Q = I × t) passed through the electrolyte.",
-    },
-    {
-      id: 'ext-6',
-      type: 'diagram',
-      imageUrl: '/media/chemistry.jpg',
-      caption: 'Figure 1: Diagrammatic representation of an electrolytic cell showing anode (+), cathode (-), and ionic migration.',
-    },
-    {
-      id: 'ext-7',
-      type: 'heading',
-      text: '3. Preferential Discharge of Ions',
-    },
-    {
-      id: 'ext-8',
-      type: 'paragraph',
-      text: 'When multiple cations or anions migrate to the electrodes, preferential discharge is governed by three factors: their relative position in the electrochemical series, concentration in solution, and the nature of the electrode.',
-    },
-  ],
-};
-
 interface NoteStoreState {
   currentTopicId: string | null;
   doc: NoteDocument;
   savedTopics: Record<string, NoteDocument>;
-  loadTopic: (topicId: string, fallback?: Partial<NoteDocument>) => void;
+  loadTopic: (topicId: string, fallback?: Partial<NoteDocument>, force?: boolean) => void;
   removeNotesForTopics: (topicIds: string[]) => void;
   setDocument: (newDoc: NoteDocument) => void;
   updateMeta: (field: keyof Omit<NoteDocument, 'blocks'>, value: string) => void;
@@ -169,17 +58,17 @@ export const useNoteStore = create<NoteStoreState>((set, get) => ({
   },
   savedTopics: {},
 
-  loadTopic: (topicId, fallback) => {
+  loadTopic: (topicId, fallback, force) => {
     const { savedTopics, currentTopicId, doc } = get();
-    if (currentTopicId === topicId) return;
+    if (currentTopicId === topicId && !force) return;
 
     // Save existing doc before switching
     const updatedSaved = { ...savedTopics };
-    if (currentTopicId) {
+    if (currentTopicId && currentTopicId !== topicId) {
       updatedSaved[currentTopicId] = doc;
     }
 
-    if (updatedSaved[topicId]) {
+    if (updatedSaved[topicId] && !force) {
       set({
         currentTopicId: topicId,
         doc: updatedSaved[topicId],

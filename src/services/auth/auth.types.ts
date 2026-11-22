@@ -1,30 +1,19 @@
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  role: "student" | "admin";
-  onboardingComplete: boolean;
-  createdAt: string;
-}
+import type { ApiUser, TokenResponse } from "@/lib/backend";
+
+export type AuthUser = ApiUser;
 
 export interface RegisterRequest {
   name: string;
   email: string;
-  password?: string;
-  provider?: "email" | "google";
+  password: string;
 }
 
 export interface LoginRequest {
   email: string;
-  password?: string;
-  provider?: "email" | "google";
+  password: string;
 }
 
-export interface AuthResponse {
-  user: AuthUser;
-  token: string;
-  expiresAt: string;
-}
+export type AuthResponse = TokenResponse;
 
 export interface PasswordResetRequest {
   email: string;

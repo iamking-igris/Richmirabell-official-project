@@ -1,24 +1,12 @@
-import type { Exam, Pathway } from "@/lib/session";
+import type { StudentProfile } from "@/lib/backend";
 
-export interface StudentProfile {
-  id: string;
-  name: string;
-  email: string;
-  pathway: Pathway | null;
-  exams: Exam[];
-  jambSubjects: string[];
-  selectedSubjects: string[];
-  examMonth: string | null;
-  trialStart: number | null;
-  subscribed: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { StudentProfile };
 
 export interface UpdateStudentProfileRequest {
   name?: string;
-  exams?: Exam[];
+  exams?: string[];
   jambSubjects?: string[];
   selectedSubjects?: string[];
   examMonth?: string | null;
+  onboardingComplete?: boolean;
 }

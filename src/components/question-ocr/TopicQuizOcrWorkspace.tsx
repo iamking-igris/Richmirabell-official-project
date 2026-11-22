@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { classifyAiExtractionFailure } from "@/lib/content-errors";
 import { Lightbulb, CheckCircle2 } from "lucide-react";
 import type { Choice, Question, TheoryQuestion, TheoryPart, ReviewStatus } from "@/data/catalog";
 import {
@@ -122,6 +123,7 @@ export function TopicQuizOcrWorkspace({
 
   // Run Real OCR Extraction & AI Solving
   async function handleRunExtraction() {
+    if (isExtracting) return;
     if (questionFiles.length === 0 && theoryFiles.length === 0) {
       setOcrError("Please upload at least one Objective or Theory question page photo or PDF.");
       return;
@@ -135,6 +137,7 @@ export function TopicQuizOcrWorkspace({
     const batchId = `topic-batch-${Date.now()}`;
     const objList: ExtractedObjectivePreviewItem[] = [];
     const theoryList: ExtractedTheoryPreviewItem[] = [];
+    const extractionErrors: string[] = [];
 
     try {
       // 1. Process Objective Question Pages
@@ -142,69 +145,73 @@ export function TopicQuizOcrWorkspace({
         for (let i = 0; i < questionFiles.length; i++) {
           const file = questionFiles[i];
           setExtractingMsg(`Extracting & solving objective questions from ${file.name} (page ${i + 1} of ${questionFiles.length})...`);
-          const base64 = await fileToBase64(file);
-          const res = await extractQuestionsFromPage(
-            base64,
-            file.type || "image/jpeg",
-            file.name,
-            batchId,
-            `qfile-${i}`,
-            i + 1
-          );
+          try {
+            const base64 = await fileToBase64(file);
+            const res = await extractQuestionsFromPage(
+              base64,
+              file.type || "image/jpeg",
+              file.name,
+              batchId,
+              `qfile-${i}`,
+              i + 1
+            );
 
-          if (res.ok) {
-            for (const q of res.questions) {
-              const isMCQ = q.type === "multiple_choice" || (q.options && q.options.length > 0);
-              if (isMCQ) {
-                const optionsList: { key: Choice; text: string }[] = KEYS.map((k) => {
-                  const foundOpt = q.options?.find((o: any) => o.key === k);
-                  return { key: k, text: foundOpt ? foundOpt.text : "" };
-                });
+            if (res.ok) {
+              for (const q of res.questions) {
+                const isMCQ = q.type === "multiple_choice" || (q.options && q.options.length > 0);
+                if (isMCQ) {
+                  const optionsList: { key: Choice; text: string }[] = KEYS.map((k) => {
+                    const foundOpt = q.options?.find((o: any) => o.key === k);
+                    return { key: k, text: foundOpt ? foundOpt.text : "" };
+                  });
 
-                const aiSolved = q.solvedAnswer?.toUpperCase();
-                const isValidKey = aiSolved && KEYS.includes(aiSolved as Choice);
-                const finalAns: Choice = isValidKey ? (aiSolved as Choice) : "A";
-                let needsReview = Boolean(q.needsReview || q.hasWarning || !isValidKey);
-                let reviewReason = q.reviewReason || q.warningDetails;
+                  const aiSolved = q.solvedAnswer?.toUpperCase();
+                  const isValidKey = aiSolved && KEYS.includes(aiSolved as Choice);
+                  const finalAns: Choice = isValidKey ? (aiSolved as Choice) : "A";
+                  let needsReview = Boolean(q.needsReview || q.hasWarning || !isValidKey);
+                  let reviewReason = q.reviewReason || q.warningDetails;
 
-                if (!isValidKey && !reviewReason) {
-                  reviewReason = "Gemini could not definitively determine the correct option from question content. Please select the correct option.";
+                  if (!isValidKey && !reviewReason) {
+                    reviewReason = "Gemini could not definitively determine the correct option from question content. Please select the correct option.";
+                  }
+
+                  objList.push({
+                    type: "multiple_choice",
+                    id: `mcq-${objList.length}-${Date.now()}`,
+                    num: q.questionNumber || String(objList.length + 1),
+                    prompt: q.prompt || "",
+                    options: optionsList,
+                    answer: finalAns,
+                    explain: q.explanation || "",
+                    needsReview,
+                    reviewReason,
+                    reviewStatus: needsReview ? "Needs Review" : "AI Solved",
+                    sourceOrigin: "ai_solved",
+                  });
+                } else {
+                  // If a theory question appeared on this page
+                  const hasModelAns = Boolean(q.modelAnswer);
+                  theoryList.push({
+                    type: "theory",
+                    id: `th-mix-${theoryList.length}-${Date.now()}`,
+                    num: q.questionNumber || String(theoryList.length + 1),
+                    prompt: q.prompt || "",
+                    modelAnswer: q.modelAnswer || "",
+                    marks: q.marks || 5,
+                    explain: q.explanation || "",
+                    subparts: q.subparts || [],
+                    needsReview: Boolean(q.needsReview || !hasModelAns),
+                    reviewReason: q.reviewReason || (!hasModelAns ? "Model answer requires teacher review." : undefined),
+                    reviewStatus: q.needsReview || !hasModelAns ? "Needs Review" : "AI Solved",
+                    sourceOrigin: "ai_solved",
+                  });
                 }
-
-                objList.push({
-                  type: "multiple_choice",
-                  id: `mcq-${objList.length}-${Date.now()}`,
-                  num: q.questionNumber || String(objList.length + 1),
-                  prompt: q.prompt || "",
-                  options: optionsList,
-                  answer: finalAns,
-                  explain: q.explanation || "",
-                  needsReview,
-                  reviewReason,
-                  reviewStatus: needsReview ? "Needs Review" : "AI Solved",
-                  sourceOrigin: "ai_solved",
-                });
-              } else {
-                // If a theory question appeared on this page
-                const hasModelAns = Boolean(q.modelAnswer);
-                theoryList.push({
-                  type: "theory",
-                  id: `th-mix-${theoryList.length}-${Date.now()}`,
-                  num: q.questionNumber || String(theoryList.length + 1),
-                  prompt: q.prompt || "",
-                  modelAnswer: q.modelAnswer || "",
-                  marks: q.marks || 5,
-                  explain: q.explanation || "",
-                  subparts: q.subparts || [],
-                  needsReview: Boolean(q.needsReview || !hasModelAns),
-                  reviewReason: q.reviewReason || (!hasModelAns ? "Model answer requires teacher review." : undefined),
-                  reviewStatus: q.needsReview || !hasModelAns ? "Needs Review" : "AI Solved",
-                  sourceOrigin: "ai_solved",
-                });
               }
+            } else {
+              extractionErrors.push(`${file.name}: ${res.message}`);
             }
-          } else {
-            setOcrError(res.message);
+          } catch (fileErr: any) {
+            extractionErrors.push(`${file.name}: ${fileErr?.message || "Failed to read this file."}`);
           }
         }
       }
@@ -214,37 +221,56 @@ export function TopicQuizOcrWorkspace({
         for (let i = 0; i < theoryFiles.length; i++) {
           const file = theoryFiles[i];
           setExtractingMsg(`Extracting & solving theory questions with full subparts from ${file.name} (page ${i + 1} of ${theoryFiles.length})...`);
-          const base64 = await fileToBase64(file);
-          const res = await extractTheoryFromPage(
-            base64,
-            file.type || "image/jpeg",
-            file.name,
-            batchId,
-            `thfile-${i}`,
-            i + 1
-          );
+          try {
+            const base64 = await fileToBase64(file);
+            const res = await extractTheoryFromPage(
+              base64,
+              file.type || "image/jpeg",
+              file.name,
+              batchId,
+              `thfile-${i}`,
+              i + 1
+            );
 
-          if (res.ok) {
-            for (const t of res.theoryQuestions) {
-              const hasModelAns = Boolean(
-                (t.modelAnswer && t.modelAnswer.trim().length > 0) ||
-                (t.parts && t.parts.some((p: any) => p.directAnswer))
-              );
-              const needsReview = Boolean(t.needsReview || t.hasWarning || !hasModelAns);
-              const reviewReason = t.reviewReason || t.warningDetails || (!hasModelAns ? "Model answer requires teacher review." : undefined);
-              const diagramSvg = sanitizeSvg(t.diagramSvg);
+            if (res.ok) {
+              for (const t of res.theoryQuestions) {
+                const hasModelAns = Boolean(
+                  (t.modelAnswer && t.modelAnswer.trim().length > 0) ||
+                  (t.parts && t.parts.some((p: any) => p.directAnswer))
+                );
+                const needsReview = Boolean(t.needsReview || t.hasWarning || !hasModelAns);
+                const reviewReason = t.reviewReason || t.warningDetails || (!hasModelAns ? "Model answer requires teacher review." : undefined);
+                const diagramSvg = sanitizeSvg(t.diagramSvg);
 
-              let parts: TheoryPart[] = [];
-              if (Array.isArray(t.parts) && t.parts.length > 0) {
-                parts = t.parts.map((p: any) => ({
-                  label: String(p.label || "").trim(),
-                  questionText: String(p.questionText || p.prompt || "").trim(),
-                  directAnswer: String(p.directAnswer || p.modelAnswer || "").trim(),
-                  tutorExplanation: String(p.tutorExplanation || p.explanation || p.explain || "").trim(),
-                  marks: p.marks ? String(p.marks).trim() : undefined,
-                }));
-              } else if (Array.isArray(t.subparts) && t.subparts.length > 0) {
-                if (t.prompt && t.prompt.trim()) {
+                let parts: TheoryPart[] = [];
+                if (Array.isArray(t.parts) && t.parts.length > 0) {
+                  parts = t.parts.map((p: any) => ({
+                    label: String(p.label || "").trim(),
+                    questionText: String(p.questionText || p.prompt || "").trim(),
+                    directAnswer: String(p.directAnswer || p.modelAnswer || "").trim(),
+                    tutorExplanation: String(p.tutorExplanation || p.explanation || p.explain || "").trim(),
+                    marks: p.marks ? String(p.marks).trim() : undefined,
+                  }));
+                } else if (Array.isArray(t.subparts) && t.subparts.length > 0) {
+                  if (t.prompt && t.prompt.trim()) {
+                    parts.push({
+                      label: t.questionNumber ? `${t.questionNumber}.` : "1.",
+                      questionText: t.prompt.trim(),
+                      directAnswer: t.modelAnswer ? t.modelAnswer.trim() : "",
+                      tutorExplanation: t.explain ? t.explain.trim() : "",
+                      marks: t.marks ? `[${t.marks} marks]` : undefined,
+                    });
+                  }
+                  for (const sp of t.subparts) {
+                    parts.push({
+                      label: String(sp.label || "").trim(),
+                      questionText: String(sp.prompt || sp.questionText || "").trim(),
+                      directAnswer: String(sp.modelAnswer || sp.directAnswer || "").trim(),
+                      tutorExplanation: String(sp.tutorExplanation || sp.explain || "").trim(),
+                      marks: sp.marks ? (typeof sp.marks === "number" ? `[${sp.marks} marks]` : String(sp.marks)) : undefined,
+                    });
+                  }
+                } else if (t.prompt) {
                   parts.push({
                     label: t.questionNumber ? `${t.questionNumber}.` : "1.",
                     questionText: t.prompt.trim(),
@@ -253,59 +279,59 @@ export function TopicQuizOcrWorkspace({
                     marks: t.marks ? `[${t.marks} marks]` : undefined,
                   });
                 }
-                for (const sp of t.subparts) {
-                  parts.push({
-                    label: String(sp.label || "").trim(),
-                    questionText: String(sp.prompt || sp.questionText || "").trim(),
-                    directAnswer: String(sp.modelAnswer || sp.directAnswer || "").trim(),
-                    tutorExplanation: String(sp.tutorExplanation || sp.explain || "").trim(),
-                    marks: sp.marks ? (typeof sp.marks === "number" ? `[${sp.marks} marks]` : String(sp.marks)) : undefined,
-                  });
-                }
-              } else if (t.prompt) {
-                parts.push({
-                  label: t.questionNumber ? `${t.questionNumber}.` : "1.",
-                  questionText: t.prompt.trim(),
-                  directAnswer: t.modelAnswer ? t.modelAnswer.trim() : "",
-                  tutorExplanation: t.explain ? t.explain.trim() : "",
-                  marks: t.marks ? `[${t.marks} marks]` : undefined,
+
+                theoryList.push({
+                  type: "theory",
+                  id: `th-${theoryList.length}-${Date.now()}`,
+                  num: t.questionNumber || String(theoryList.length + 1),
+                  introText: t.introText,
+                  prompt: t.prompt || (parts[0]?.questionText ?? ""),
+                  modelAnswer: t.modelAnswer || (parts[0]?.directAnswer ?? ""),
+                  marks: typeof t.marks === "number" ? t.marks : 5,
+                  explain: t.explain || (parts[0]?.tutorExplanation ?? ""),
+                  parts,
+                  subparts: Array.isArray(t.subparts) ? t.subparts : [],
+                  diagramSvg,
+                  diagramCaption: t.diagramCaption,
+                  needsReview,
+                  reviewReason,
+                  reviewStatus: needsReview ? "Needs Review" : (t.reviewStatus || "AI Solved"),
+                  sourceOrigin: "ai_solved",
                 });
               }
-
-              theoryList.push({
-                type: "theory",
-                id: `th-${theoryList.length}-${Date.now()}`,
-                num: t.questionNumber || String(theoryList.length + 1),
-                introText: t.introText,
-                prompt: t.prompt || (parts[0]?.questionText ?? ""),
-                modelAnswer: t.modelAnswer || (parts[0]?.directAnswer ?? ""),
-                marks: typeof t.marks === "number" ? t.marks : 5,
-                explain: t.explain || (parts[0]?.tutorExplanation ?? ""),
-                parts,
-                subparts: Array.isArray(t.subparts) ? t.subparts : [],
-                diagramSvg,
-                diagramCaption: t.diagramCaption,
-                needsReview,
-                reviewReason,
-                reviewStatus: needsReview ? "Needs Review" : (t.reviewStatus || "AI Solved"),
-                sourceOrigin: "ai_solved",
-              });
+            } else {
+              extractionErrors.push(`${file.name}: ${res.message}`);
             }
-          } else {
-            setOcrError(res.message);
+          } catch (fileErr: any) {
+            extractionErrors.push(`${file.name}: ${fileErr?.message || "Failed to read this file."}`);
           }
         }
       }
 
+      if (extractionErrors.length > 0) {
+        setOcrError(extractionErrors.join(" "));
+      }
+
       if (objList.length === 0 && theoryList.length === 0) {
-        setOcrError("No legible questions were extracted. Please try uploading clearer, higher contrast photos.");
+        if (extractionErrors.length === 0) {
+          setOcrError("No legible questions were extracted. Try a clearer, higher-contrast image or PDF page.");
+        }
+        // Keep selected files so the admin can retry or adjust without re-uploading.
       } else {
         setExtractedObjectiveItems(objList);
         setExtractedTheoryItems(theoryList);
         setPreviewTab(objList.length > 0 ? "objective" : "theory");
+        // Preserve per-file errors as a notice only when some items were extracted.
+        if (extractionErrors.length > 0) {
+          setOcrError(`Some pages could not be processed: ${extractionErrors.join(" ")}`);
+        }
       }
     } catch (err: any) {
-      setOcrError(err?.message || "Failed to process OCR extraction. Please check your image clarity.");
+      const failure = classifyAiExtractionFailure(
+        err,
+        err?.message || "Failed to process OCR extraction. Please check your image clarity.",
+      );
+      setOcrError(failure.message);
     } finally {
       setIsExtracting(false);
       setExtractingMsg("");

@@ -5,23 +5,33 @@ export const Route = createFileRoute("/studio/account")({ component: AccountPage
 
 function AccountPage() {
   const navigate = useNavigate();
-  const name = useSession((s) => s.name);
-  const email = useSession((s) => s.email);
-  const exams = useSession((s) => s.exams);
-  const jamb = useSession((s) => s.jambSubjects);
+  const user = useSession((s) => s.user);
+  const profile = useSession((s) => s.profile);
+  const access = useSession((s) => s.access);
+  const role = useSession((s) => s.role);
   const leave = useSession((s) => s.leave);
+  const name = profile?.name ?? user?.name ?? "Student";
+  const email = profile?.email ?? user?.email ?? "";
+  const emailVerified = user?.email_verified ?? false;
+
+  const trialLabel = access ? (access.has_access ? "Active access" : access.on_trial ? "Free trial active" : "No active access") : "Checking…";
 
   return (
     <div className="mx-auto max-w-2xl font-sans">
       <h1 className="font-display text-4xl">Account</h1>
-      <p className="mt-2 text-muted">{name || "Student"}{email ? ` · ${email}` : ""}</p>
+      <p className="mt-2 text-muted">{name}{email ? ` · ${email}` : ""}</p>
+      <p className="mt-1 text-sm text-muted">
+        Email verified: {emailVerified ? "Yes" : "No"}
+      </p>
 
       <ul className="mt-6 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
         <li>
           <Link to="/studio/profile" className="flex min-h-14 items-center justify-between px-4 py-3 hover:bg-paper/50 transition-colors">
             <span>
               <span className="block font-medium">Profile and exams</span>
-              <span className="text-sm text-muted">{exams.map((e) => e.toUpperCase()).join(" and ") || "Exams not set"}</span>
+              <span className="text-sm text-muted">
+                {access ? trialLabel : "Checking access…"}
+              </span>
             </span>
             <span className="text-sm font-semibold text-primary">Edit →</span>
           </Link>
@@ -29,7 +39,11 @@ function AccountPage() {
 
         <li className="px-4 py-3">
           <p className="font-medium">JAMB subjects</p>
-          <p className="text-sm text-muted">{jamb.length === 3 ? `English, ${jamb.join(", ")}` : "Not set"}</p>
+          <p className="text-sm text-muted">
+            {profile?.jambSubjects.length === 3
+              ? `English, ${profile.jambSubjects.join(", ")}`
+              : "Not set"}
+          </p>
           <Link to="/studio/profile" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-primary">
             Change combination
           </Link>
@@ -39,7 +53,9 @@ function AccountPage() {
           <Link to="/studio/plan" className="flex min-h-14 items-center justify-between px-4 py-3 hover:bg-paper/50 transition-colors">
             <span>
               <span className="block font-medium">Access</span>
-              <span className="text-sm text-muted">Trial and term access. Payment is simulated on this device.</span>
+              <span className="text-sm text-muted">
+                Trial: ₦0 for 2 days · Monthly access: ₦4,500 for 30 days · Renewals extend expiry.
+              </span>
             </span>
             <span className="text-sm font-semibold text-primary">Open →</span>
           </Link>
@@ -56,16 +72,6 @@ function AccountPage() {
         </li>
 
         <li>
-          <Link to="/studio/security" className="flex min-h-14 items-center justify-between px-4 py-3 hover:bg-paper/50 transition-colors">
-            <span>
-              <span className="block font-medium">Security</span>
-              <span className="text-sm text-muted">Review account security architecture and active session details.</span>
-            </span>
-            <span className="text-sm font-semibold text-primary">Open →</span>
-          </Link>
-        </li>
-
-        <li>
           <Link to="/studio/help" className="flex min-h-14 items-center justify-between px-4 py-3 hover:bg-paper/50 transition-colors">
             <span>
               <span className="block font-medium">Help & Support</span>
@@ -75,12 +81,12 @@ function AccountPage() {
           </Link>
         </li>
 
-        {(email.toLowerCase() === "admin@gmail.com" || (typeof sessionStorage !== "undefined" && sessionStorage.getItem("richmirabel-admin") === "1")) && (
+        {role === "ADMIN" && (
           <li>
             <Link to="/admin" className="flex min-h-14 items-center justify-between px-4 py-3 bg-soft/50 hover:bg-soft transition-colors">
               <span>
                 <span className="block font-semibold text-primary">Admin Studio</span>
-                <span className="text-sm text-muted">Access administration dashboard, content library, and JAMB CBT generator.</span>
+                <span className="text-sm text-muted">Administration dashboard, content library, and CBT bank.</span>
               </span>
               <span className="text-sm font-semibold text-primary">Admin →</span>
             </Link>
@@ -91,7 +97,7 @@ function AccountPage() {
       <button
         type="button"
         onClick={() => {
-          leave();
+          void leave();
           navigate({ to: "/" });
         }}
         className="mt-6 min-h-12 rounded-full border border-line px-6 text-sm font-semibold hover:bg-paper transition-colors"

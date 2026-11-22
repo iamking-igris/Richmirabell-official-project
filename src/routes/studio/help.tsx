@@ -8,7 +8,6 @@ import {
   Mail,
   Phone,
   BookOpen,
-  FileText,
   PenLine,
   BarChart3,
   User,
@@ -17,11 +16,12 @@ import {
   HelpCircle,
   ExternalLink,
 } from "lucide-react";
-import { useSettingsStore } from "@/lib/settings-store";
-
 export const Route = createFileRoute("/studio/help")({
   component: StudentHelpPage,
 });
+
+const SUPPORT_EMAIL = "support@richmirabel.ng";
+const SUPPORT_PHONE = "+234 803 123 4567";
 
 interface FaqItem {
   id: string;
@@ -58,7 +58,7 @@ const FAQ_DATA: FaqItem[] = [
     id: "account-4",
     category: "Account & Profile",
     question: "What should I do if I cannot access my account?",
-    answer: "Your student profile is saved on this browser device. If you log out, simply click 'Sign in' on the login screen or re-enter your student details to resume your trial.",
+    answer: "Your student profile is saved to your Richmirabel account. If you cannot sign in, use the 'Forgot password' link on the login screen to reset your password.",
     keywords: ["access", "login", "signin", "cannot", "lost", "recover"],
   },
 
@@ -90,29 +90,6 @@ const FAQ_DATA: FaqItem[] = [
     question: "Can I revisit previously studied lessons?",
     answer: "Yes, all published lesson notes remain open and readable at any time, even after your free trial period expires.",
     keywords: ["revisit", "reread", "previous", "notes", "trial", "access"],
-  },
-
-  // Past Questions & Practice
-  {
-    id: "practice-1",
-    category: "Past Questions & Practice",
-    question: "How do I access past questions?",
-    answer: "Click 'Past Papers' in the main menu or click the 'WAEC past papers' card on your Dashboard to launch authentic WAEC examination practice.",
-    keywords: ["past", "questions", "papers", "waec", "archive", "previous"],
-  },
-  {
-    id: "practice-2",
-    category: "Past Questions & Practice",
-    question: "How do I practise questions?",
-    answer: "Select your desired subject, choose a specific examination year (e.g. 2024, 2023) or mixed practice mode, choose Objective or Theory section, and start.",
-    keywords: ["practice", "questions", "mode", "objective", "theory", "year"],
-  },
-  {
-    id: "practice-3",
-    category: "Past Questions & Practice",
-    question: "Where can I find my practice results?",
-    answer: "Detailed question breakdowns, correct answer keys, and step-by-step explanations appear immediately upon submitting your set.",
-    keywords: ["results", "scores", "answers", "explanations", "breakdown"],
   },
 
   // JAMB CBT
@@ -150,7 +127,7 @@ const FAQ_DATA: FaqItem[] = [
     id: "progress-1",
     category: "Progress",
     question: "How is my progress recorded?",
-    answer: "Your best score for each topic quiz and examination attempt is automatically recorded and saved in your device's browser storage.",
+    answer: "Your best score for each topic quiz and examination attempt is automatically recorded and saved to your Richmirabel account.",
     keywords: ["progress", "recorded", "saved", "scores", "device", "history"],
   },
   {
@@ -164,7 +141,7 @@ const FAQ_DATA: FaqItem[] = [
     id: "progress-3",
     category: "Progress",
     question: "Can I review my previous attempts?",
-    answer: "Yes! Click on any past paper or quiz entry in the Examination Attempts Log on your Progress page to open its full question-by-question review.",
+    answer: "Yes! Click on any CBT or quiz entry in the Examination Attempts Log on your Progress page to open its full question-by-question review.",
     keywords: ["review", "previous", "attempts", "past", "log", "answers"],
   },
 
@@ -202,7 +179,6 @@ const FAQ_DATA: FaqItem[] = [
 export function StudentHelpPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>("account-1");
-  const generalSettings = useSettingsStore((s) => s.general);
 
   const filteredFaqs = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -254,7 +230,7 @@ export function StudentHelpPage() {
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search help topics (e.g. subjects, CBT, timer, trial, past questions)..."
+          placeholder="Search help topics (e.g. subjects, CBT, timer, trial)..."
           className="w-full rounded-2xl border border-line bg-surface py-3.5 pl-11 pr-4 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-2xs"
         />
         {searchTerm && (
@@ -275,7 +251,7 @@ export function StudentHelpPage() {
           {[
             { to: "/studio/profile", label: "Profile & Exams", desc: "Update subjects & exam month", icon: User },
             { to: "/studio/guides", label: "Study Guides", desc: "Tips & subject strategies", icon: BookOpen },
-            { to: "/studio/past-questions", label: "Past Papers", desc: "WAEC past papers practice", icon: FileText },
+            { to: "/studio/subjects", label: "Notes", desc: "Lessons & topic notes", icon: BookOpen },
             { to: "/studio/cbt", label: "JAMB CBT", desc: "Full hall CBT simulations", icon: PenLine },
             { to: "/studio/progress", label: "Scores & Logs", desc: "Track performance", icon: BarChart3 },
             { to: "/studio/plan", label: "Term Access", desc: "Trial and subscription plan", icon: CreditCard },
@@ -377,10 +353,10 @@ export function StudentHelpPage() {
             <div>
               <span className="text-muted block text-[11px]">Academic Support Email</span>
               <a
-                href={`mailto:${generalSettings.supportEmail || "support@richmirabel.ng"}`}
+                href={`mailto:${SUPPORT_EMAIL}`}
                 className="font-bold text-ink hover:text-primary transition-colors"
               >
-                {generalSettings.supportEmail || "support@richmirabel.ng"}
+                {SUPPORT_EMAIL}
               </a>
             </div>
           </div>
@@ -390,17 +366,17 @@ export function StudentHelpPage() {
             <div>
               <span className="text-muted block text-[11px]">Support Helpline</span>
               <a
-                href={`tel:${(generalSettings.supportPhone || "+234 803 123 4567").replace(/\s+/g, "")}`}
+                href={`tel:${SUPPORT_PHONE.replace(/\s+/g, "")}`}
                 className="font-bold text-ink hover:text-primary transition-colors"
               >
-                {generalSettings.supportPhone || "+234 803 123 4567"}
+                {SUPPORT_PHONE}
               </a>
             </div>
           </div>
         </div>
 
         <p className="text-[11px] text-muted leading-relaxed">
-          Support inquiries are reviewed by Baba Ne and the academic operations team during standard business hours (8:00 AM – 6:00 PM West Africa Time).
+          Support inquiries are reviewed by the academic operations team during standard business hours (8:00 AM – 6:00 PM West Africa Time).
         </p>
       </div>
     </div>

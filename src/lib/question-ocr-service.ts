@@ -1,4 +1,5 @@
 import type { ExtractedQuestion, ExtractedAnswer } from "@/types/question-import";
+import { classifyAiExtractionFailure } from "@/lib/content-errors";
 
 export type ExtractQuestionsResult =
   | { ok: true; questions: ExtractedQuestion[] }
@@ -29,9 +30,13 @@ export async function extractQuestionsFromPage(
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
+      const failure = classifyAiExtractionFailure(
+        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract questions from page." },
+        "Failed to extract questions from page.",
+      );
       return {
         ok: false,
-        message: data?.message || "Failed to extract questions from page.",
+        message: failure.message,
       };
     }
 
@@ -45,9 +50,18 @@ export async function extractQuestionsFromPage(
 
     return { ok: true, questions };
   } catch (err: any) {
+    const raw = String(err?.message || "");
+    const isNetwork =
+      err instanceof TypeError ||
+      raw.includes("fetch failed") ||
+      raw.includes("Failed to fetch") ||
+      raw.includes("NetworkError") ||
+      raw.includes("Load failed");
     return {
       ok: false,
-      message: err?.message || "Network error while connecting to question OCR engine.",
+      message: isNetwork
+        ? "Could not reach the question extraction service. Check that the frontend server is running and try again."
+        : raw || "Failed to extract questions from page.",
     };
   }
 }
@@ -73,9 +87,13 @@ export async function extractAnswersFromPage(
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
+      const failure = classifyAiExtractionFailure(
+        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract answers from key page." },
+        "Failed to extract answers from key page.",
+      );
       return {
         ok: false,
-        message: data?.message || "Failed to extract answers from key page.",
+        message: failure.message,
       };
     }
 
@@ -89,9 +107,18 @@ export async function extractAnswersFromPage(
 
     return { ok: true, answers };
   } catch (err: any) {
+    const raw = String(err?.message || "");
+    const isNetwork =
+      err instanceof TypeError ||
+      raw.includes("fetch failed") ||
+      raw.includes("Failed to fetch") ||
+      raw.includes("NetworkError") ||
+      raw.includes("Load failed");
     return {
       ok: false,
-      message: err?.message || "Network error while connecting to answer OCR engine.",
+      message: isNetwork
+        ? "Could not reach the answer extraction service. Check that the frontend server is running and try again."
+        : raw || "Failed to extract answers from page.",
     };
   }
 }
@@ -121,9 +148,13 @@ export async function extractTheoryFromPage(
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
+      const failure = classifyAiExtractionFailure(
+        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract theory questions from page." },
+        "Failed to extract theory questions from page.",
+      );
       return {
         ok: false,
-        message: data?.message || "Failed to extract theory questions from page.",
+        message: failure.message,
       };
     }
 
@@ -137,9 +168,18 @@ export async function extractTheoryFromPage(
 
     return { ok: true, theoryQuestions };
   } catch (err: any) {
+    const raw = String(err?.message || "");
+    const isNetwork =
+      err instanceof TypeError ||
+      raw.includes("fetch failed") ||
+      raw.includes("Failed to fetch") ||
+      raw.includes("NetworkError") ||
+      raw.includes("Load failed");
     return {
       ok: false,
-      message: err?.message || "Network error while connecting to theory OCR engine.",
+      message: isNetwork
+        ? "Could not reach the theory extraction service. Check that the frontend server is running and try again."
+        : raw || "Failed to extract theory questions from page.",
     };
   }
 }

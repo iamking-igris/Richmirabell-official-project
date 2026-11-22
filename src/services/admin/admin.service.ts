@@ -1,13 +1,13 @@
-import { apiClient } from "../api/client";
+import { adminApi } from "@/lib/backend";
 import type { AdminDashboardOverview, AdminStudentSummary } from "./admin.types";
 
 export class AdminService {
-  public async getOverview(): Promise<AdminDashboardOverview> {
-    return apiClient.get<AdminDashboardOverview>("/admin/overview");
+  public getOverview(): Promise<AdminDashboardOverview> {
+    return adminApi.overview() as unknown as Promise<AdminDashboardOverview>;
   }
 
-  public async getStudents(): Promise<AdminStudentSummary[]> {
-    return apiClient.get<AdminStudentSummary[]>("/admin/students");
+  public getStudents(): Promise<AdminStudentSummary[]> {
+    return adminApi.students() as unknown as Promise<AdminStudentSummary[]>;
   }
 }
 
