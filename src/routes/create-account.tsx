@@ -5,6 +5,7 @@ import { BrandMark } from "@/components/brand";
 import { googleClientId, promptGoogleSignIn } from "@/lib/google";
 import { useSession } from "@/lib/session";
 import { ApiError } from "@/services/api/errors";
+import { postAuthDestination } from "@/lib/auth-routing";
 
 export const Route = createFileRoute("/create-account")({ component: CreateAccount });
 
@@ -73,8 +74,8 @@ function CreateAccount() {
                 setStatus("google");
                 try {
                   const credential = await promptGoogleSignIn();
-                  await loginWithGoogle(credential);
-                  navigate({ to: "/start" });
+                  const user = await loginWithGoogle(credential);
+                  await navigate({ to: postAuthDestination(user) });
                 } catch (err) {
                   setFormError(err instanceof Error ? err.message : "Google sign-up failed.");
                   setStatus("error");
@@ -131,8 +132,8 @@ function CreateAccount() {
                 setFormError("");
                 submittingRef.current = true;
                 try {
-                  await register(fields.name.trim(), fields.email.trim(), fields.password);
-                  navigate({ to: "/start" });
+                  const user = await register(fields.name.trim(), fields.email.trim(), fields.password);
+                  await navigate({ to: postAuthDestination(user) });
                 } catch (err) {
                   submittingRef.current = false;
                   setStatus("error");

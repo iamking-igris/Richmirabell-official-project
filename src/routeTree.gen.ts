@@ -537,7 +537,6 @@ export interface FileRouteTypes {
     | '/studio/performance/$attemptId'
     | '/studio/subject/$id'
     | '/studio/topic/$id'
-    | '/studio/cbt/weekly/$examId'
   id:
     | '__root__'
     | '/'
@@ -1081,6 +1080,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   SignupRoute: SignupRoute,
+  StartRoute: StartRoute,
   StudioRoute: StudioRouteWithChildren,
 }
 export const routeTree = rootRouteImport

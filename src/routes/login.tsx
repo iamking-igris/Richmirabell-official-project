@@ -4,6 +4,7 @@ import { BrandMark } from "@/components/brand";
 import { googleClientId, promptGoogleSignIn } from "@/lib/google";
 import { useSession } from "@/lib/session";
 import { ApiError } from "@/services/api/errors";
+import { postAuthDestination } from "@/lib/auth-routing";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
@@ -17,11 +18,7 @@ function Login() {
   const formRef = useRef<HTMLFormElement>(null);
 
   async function finish(user: { role: string; onboarding_complete: boolean }) {
-    if (user.role === "ADMIN") {
-      navigate({ to: "/admin" });
-      return;
-    }
-    navigate({ to: user.onboarding_complete ? "/studio" : "/start" });
+    await navigate({ to: postAuthDestination(user) });
   }
 
   return (

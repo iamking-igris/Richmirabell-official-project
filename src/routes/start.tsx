@@ -1,53 +1,67 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand";
-import { COMPULSORY, tracks } from "@/data/tracks";
 import { publishedSubjects, useContent } from "@/lib/content";
+import {
+  isValidExamMonth,
+  isValidJambSelection,
+  normalizeJambSelection,
+  type OnboardingExam,
+} from "@/lib/onboarding";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/start")({ component: StartFlow });
 
-type Track = keyof typeof tracks;
+const COMPULSORY_SUBJECT = "english";
+const STORAGE_KEY = "richmirabel-start-draft";
+const stepTitles = ["Examination", "JAMB subjects", "Exam date", "Ready"];
 
 type Draft = {
-  name: string;
-  track: Track | null;
+  exam: OnboardingExam | null;
   subjects: string[];
   examMonth: string | null;
   step: number;
 };
 
-const STORAGE_KEY = "richmirabel-start-draft";
-const stepTitles = ["Name", "Class", "JAMB subjects", "Exam date", "Ready"];
-
-function getDefaultSubjects(track: Track | null) {
-  if (!track) return [COMPULSORY];
-  return [COMPULSORY, ...tracks[track].usual];
-}
-
 function StartFlow() {
   const navigate = useNavigate();
-  const sessionName = useSession((s) => s.name);
-  const sessionTrack = useSession((s) => s.track);
   const existingSubjects = useSession((s) => s.subjects);
+  const existingExams = useSession((s) => s.exams);
+  const existingExamMonth = useSession((s) => s.examMonth);
   const completeOnboarding = useSession((s) => s.completeOnboarding);
+  const sessionStatus = useSession((s) => s.status);
+  const sessionUser = useSession((s) => s.user);
+  const onboardingComplete = useSession((s) => s.onboardingComplete);
+  const sessionRole = useSession((s) => s.role);
+  const subjects = publishedSubjects(useContent((s) => s.subjects));
 
   const [draft, setDraft] = useState<Draft>(() => {
     const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-    const parsed = saved ? (JSON.parse(saved) as Partial<Draft>) : {};
-    const track = (parsed.track as Track | null) ?? (sessionTrack as Track | null) ?? null;
-    const fallbackSubjects = track ? [...new Set((existingSubjects.length ? existingSubjects : getDefaultSubjects(track)))] : [COMPULSORY];
+    let parsed: Partial<Draft> = {};
+    try {
+      parsed = saved ? (JSON.parse(saved) as Partial<Draft>) : {};
+    } catch {
+      parsed = {};
+    }
+
+    const exam = parsed.exam === "waec" || parsed.exam === "jamb"
+      ? parsed.exam
+      : existingExams.includes("waec")
+        ? "waec"
+        : existingExams.includes("jamb")
+          ? "jamb"
+          : null;
+
+    const savedSubjects = Array.isArray(parsed.subjects) ? parsed.subjects : existingSubjects;
     return {
-      name: sessionName || parsed.name || "",
-      track,
-      subjects: Array.isArray(parsed.subjects) && parsed.subjects.length ? parsed.subjects : fallbackSubjects,
-      examMonth: parsed.examMonth ?? null,
-      step: sessionName && !sessionTrack ? 1 : typeof parsed.step === "number" ? parsed.step : 0,
+      exam,
+      subjects: savedSubjects,
+      examMonth: parsed.examMonth ?? existingExamMonth ?? null,
+      step: typeof parsed.step === "number" ? Math.min(3, Math.max(0, parsed.step)) : 0,
     };
   });
-
-  const [showOtherSubjects, setShowOtherSubjects] = useState(false);
-  const subjects = publishedSubjects(useContent((s) => s.subjects));
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -55,93 +69,115 @@ function StartFlow() {
     }
   }, [draft]);
 
-  const classSubjects = useMemo(() => {
-    if (!draft.track) return [] as string[];
-    return tracks[draft.track].offered;
-  }, [draft.track]);
+  useEffect(() => {
+    if (sessionStatus === "idle") void useSession.getState().restore().catch(() => undefined);
+  }, [sessionStatus]);
+
+  useEffect(() => {
+    if (!useContent.getState().loaded && !useContent.getState().loading) {
+      void useContent.getState().refresh().catch(() => undefined);
+    }
+  }, []);
 
   const subjectMap = useMemo(() => new Map(subjects.map((subject) => [subject.id, subject])), [subjects]);
-  const selectedExtras = useMemo(() => draft.subjects.filter((id) => id !== COMPULSORY), [draft.subjects]);
-  const validName = draft.name.trim();
-  const nameError = draft.step === 0 && validName.length > 0 && (validName.length < 2 || validName.length > 20);
+  const optionalSubjects = useMemo(
+    () => subjects.filter((subject) => subject.id !== COMPULSORY_SUBJECT),
+    [subjects],
+  );
+  const availableIds = useMemo(() => subjects.map((subject) => subject.id), [subjects]);
+  const normalizedJambSubjects = normalizeJambSelection(draft.subjects, availableIds);
 
-  const subjectOptions = useMemo(() => {
-    const ids = new Set(classSubjects);
-    return subjects.filter(
-      (subject) =>
-        subject.topics.some((topic) => topic.status !== "draft") &&
-        (subject.id === COMPULSORY || ids.has(subject.id)),
-    );
-  }, [classSubjects, subjects]);
+  const canContinue =
+    draft.step === 0
+      ? Boolean(draft.exam)
+      : draft.step === 1
+        ? draft.exam === "waec" || isValidJambSelection(draft.subjects, availableIds)
+        : draft.step === 2
+          ? isValidExamMonth(draft.examMonth)
+          : true;
 
-  const otherSubjectOptions = useMemo(() => {
-    const track = draft.track;
-    if (!track) return [];
-    return subjectOptions.filter(
-      (subject) => !draft.subjects.includes(subject.id) && !tracks[track].offered.includes(subject.id) && subject.id !== COMPULSORY,
-    );
-  }, [draft.subjects, draft.track, subjectOptions]);
-
-  const handleBack = () => setDraft((current) => ({ ...current, step: Math.max(0, current.step - 1) }));
-
-  const selectTrack = (track: Track) => {
+  const selectExam = (exam: OnboardingExam) => {
+    setError("");
     setDraft((current) => ({
       ...current,
-      track,
-      subjects: [COMPULSORY, ...new Set(tracks[track].usual)],
+      exam,
+      subjects: exam === "jamb"
+        ? normalizeJambSelection(current.subjects, availableIds)
+        : [],
     }));
   };
 
   const toggleSubject = (subjectId: string) => {
-    if (!draft.track) return;
-    if (subjectId === COMPULSORY) return;
-
-    const extras = selectedExtras.includes(subjectId)
-      ? selectedExtras.filter((id) => id !== subjectId)
-      : selectedExtras.length >= 3
-        ? selectedExtras
-        : [...selectedExtras, subjectId];
-
-    const next = [COMPULSORY, ...extras].filter((id, index, list) => list.indexOf(id) === index);
-    const inTrack = classSubjects.includes(subjectId) || tracks[draft.track].offered.includes(subjectId);
-    if (!inTrack) {
-      const merged = [...new Set([COMPULSORY, ...selectedExtras, subjectId])];
-      setDraft((current) => ({ ...current, subjects: merged.slice(0, 4) }));
-      return;
-    }
-    setDraft((current) => ({ ...current, subjects: next }));
+    if (subjectId === COMPULSORY_SUBJECT) return;
+    setDraft((current) => {
+      const selected = normalizeJambSelection(current.subjects, availableIds).filter((id) => id !== COMPULSORY_SUBJECT);
+      const next = selected.includes(subjectId)
+        ? selected.filter((id) => id !== subjectId)
+        : selected.length < 3
+          ? [...selected, subjectId]
+          : selected;
+      return { ...current, subjects: normalizeJambSelection(next, availableIds) };
+    });
   };
 
-  const useUsualCombination = () => {
-    if (!draft.track) return;
-    setDraft((current) => ({ ...current, subjects: [COMPULSORY, ...tracks[current.track!].usual] }));
-  };
-
-  const canContinue =
-    draft.step === 0 ? validName.length >= 2 && validName.length <= 20 :
-    draft.step === 1 ? Boolean(draft.track) :
-    draft.step === 2 ? draft.subjects.length >= 4 :
-    draft.step === 3 ? true :
-    true;
+  const handleBack = () =>
+    setDraft((current) => ({
+      ...current,
+      step:
+        current.step === 3
+          ? 2
+          : current.step === 2
+            ? current.exam === "jamb" ? 1 : 0
+            : Math.max(0, current.step - 1),
+    }));
 
   const submit = async () => {
-    if (!draft.track) return;
-    const nextSubjects = [COMPULSORY, ...new Set(draft.subjects.filter((id) => id !== COMPULSORY))].slice(0, 4);
-    await completeOnboarding({
-      name: draft.name.trim(),
-      exams: ["jamb"],
-      jambSubjects: nextSubjects.filter((id) => id !== COMPULSORY),
-      examMonth: draft.examMonth,
-      track: draft.track,
-      subjects: nextSubjects,
-    });
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(STORAGE_KEY);
+    if (submitting) return;
+    if (!draft.exam) return;
+    if (draft.exam === "jamb" && !isValidJambSelection(draft.subjects, availableIds)) {
+      setError("Choose exactly three subjects alongside compulsory English.");
+      return;
     }
-    navigate({ to: "/studio" });
+    if (!isValidExamMonth(draft.examMonth)) {
+      setError("Select a valid examination month that is not in the past.");
+      return;
+    }
+
+    setError("");
+    setSubmitting(true);
+    try {
+      await completeOnboarding({
+        name: sessionUser?.name,
+        exams: [draft.exam],
+        jambSubjects: draft.exam === "jamb" ? normalizedJambSubjects.filter((id) => id !== COMPULSORY_SUBJECT) : [],
+        examMonth: draft.examMonth,
+        subjects: draft.exam === "jamb"
+          ? normalizedJambSubjects
+          : draft.exam === "waec"
+            ? [COMPULSORY_SUBJECT]
+            : [],
+      });
+      window.localStorage.removeItem(STORAGE_KEY);
+      await navigate({ to: "/studio", replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save your setup. Try again.");
+      setSubmitting(false);
+    }
   };
 
-  const readySubjects = draft.subjects.length ? draft.subjects : getDefaultSubjects(draft.track);
+  if (sessionStatus === "idle" || sessionStatus === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper px-4">
+        <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-6 text-center">
+          <BrandMark />
+          <p className="mt-5 text-sm text-muted">Loading your account…</p>
+        </div>
+      </div>
+    );
+  }
+  if (!sessionUser) return <Navigate to="/login" />;
+  if (sessionRole === "ADMIN") return <Navigate to="/admin" />;
+  if (onboardingComplete) return <Navigate to="/studio" />;
 
   return (
     <div className="min-h-screen bg-paper text-ink">
@@ -162,38 +198,27 @@ function StartFlow() {
         {draft.step === 0 && (
           <div className="mx-auto max-w-xl">
             <p className="text-sm text-brass">Step 1</p>
-            <h1 className="mt-2 font-display text-4xl">What should we call you?</h1>
-            <label className="mt-6 block text-sm font-medium" htmlFor="name">First name</label>
-            <input id="name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full border border-line bg-surface px-3 py-3" placeholder="Aisha" />
-            {nameError && <p className="mt-2 text-sm text-ink">Use 2 to 20 characters.</p>}
+            <h1 className="mt-2 font-display text-4xl">What exam are you preparing for?</h1>
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <button type="button" onClick={() => selectExam("waec")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exam === "waec" ? "border-primary bg-soft" : "border-line bg-surface"}`}>
+                <p className="font-display text-2xl">WAEC</p>
+                <p className="mt-2 text-sm text-muted">West African Examination Council</p>
+              </button>
+              <button type="button" onClick={() => selectExam("jamb")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exam === "jamb" ? "border-primary bg-soft" : "border-line bg-surface"}`}>
+                <p className="font-display text-2xl">JAMB</p>
+                <p className="mt-2 text-sm text-muted">Joint Admissions and Matriculation Board</p>
+              </button>
+            </div>
+            {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
             <div className="mt-8 flex gap-3">
-              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: 1 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
+              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: current.exam === "jamb" ? 1 : 2 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
             </div>
           </div>
         )}
 
-        {draft.step === 1 && (
+        {draft.step === 1 && draft.exam === "jamb" && (
           <div>
             <p className="text-sm text-brass">Step 2</p>
-            <h1 className="mt-2 font-display text-4xl">Which class are you in?</h1>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              {Object.entries(tracks).map(([id, config]) => (
-                <button key={id} type="button" onClick={() => selectTrack(id as Track)} className={`min-h-[120px] border p-5 text-left ${draft.track === id ? "border-primary bg-soft" : "border-line bg-surface"}`}>
-                  <p className="font-display text-2xl">{config.label}</p>
-                  <p className="mt-2 text-sm text-muted">{config.blurb}</p>
-                </button>
-              ))}
-            </div>
-            <div className="mt-8 flex gap-3">
-              <button type="button" onClick={handleBack} className="min-h-11 border border-line px-6 text-sm">Back</button>
-              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: 2 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
-            </div>
-          </div>
-        )}
-
-        {draft.step === 2 && draft.track && (
-          <div>
-            <p className="text-sm text-brass">Step 3</p>
             <h1 className="mt-2 font-display text-4xl">Choose your JAMB subjects</h1>
             <div className="mt-6 flex items-center justify-between rounded-2xl border border-line bg-surface p-4">
               <div>
@@ -203,43 +228,52 @@ function StartFlow() {
               <span className="rounded-full bg-soft px-2 py-1 text-xs font-medium text-primary">Locked</span>
             </div>
             <div className="mt-6 flex items-center justify-between">
-              <p className="font-medium">{selectedExtras.length} of 3 chosen</p>
-              <button type="button" onClick={useUsualCombination} className="text-sm font-semibold text-primary">Use the usual combination</button>
+              <p className="font-medium">{draft.subjects.length - 1} of 3 chosen</p>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {draft.subjects.map((subjectId) => {
-                const subject = subjectMap.get(subjectId);
-                if (!subject) return null;
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {optionalSubjects.map((subject) => {
+                const selected = normalizedJambSubjects.includes(subject.id);
+                const atLimit = normalizedJambSubjects.length >= 4;
                 return (
-                  <button key={subject.id} type="button" disabled={subject.id === COMPULSORY} onClick={() => toggleSubject(subject.id)} className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm ${subject.id === COMPULSORY ? "border-primary bg-soft text-primary" : draft.subjects.includes(subject.id) ? "border-primary bg-soft" : "border-line bg-paper text-muted"}`}>
-                    <span>{subject.name}</span>
-                    {subject.id === COMPULSORY && <span className="text-[10px] uppercase tracking-wide">Compulsory</span>}
+                  <button
+                    key={subject.id}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={!selected && atLimit}
+                    onClick={() => toggleSubject(subject.id)}
+                    className={`min-h-16 rounded-2xl border px-4 py-3 text-left disabled:opacity-50 ${selected ? "border-primary bg-soft" : "border-line bg-surface"}`}
+                  >
+                    <span className="block font-medium">{subject.name}</span>
+                    <span className="mt-1 block text-xs text-muted">{selected ? "Selected" : atLimit ? "Four subjects selected" : "Add subject"}</span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-6 border border-line bg-surface p-4">
-              <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowOtherSubjects((v) => !v)}>
-                <span className="font-medium">Other subjects</span>
-                <span className="text-sm text-muted">{showOtherSubjects ? "Hide" : "Show"}</span>
-              </button>
-              {showOtherSubjects && (
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {otherSubjectOptions.map((subject) => (
-                    <button key={subject.id} type="button" onClick={() => toggleSubject(subject.id)} className={`flex items-center justify-between rounded-xl border p-3 text-left ${draft.subjects.includes(subject.id) ? "border-primary bg-soft" : "border-line bg-paper opacity-80"}`}>
-                      <span>
-                        <span className="block font-medium">{subject.name}</span>
-                        <span className="text-xs text-muted">{subject.topics.length} topics</span>
-                      </span>
-                      {draft.subjects.includes(subject.id) ? <span className="text-xs text-primary">Added</span> : <span className="text-xs text-muted">Add</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="mt-8 flex gap-3">
+              <button type="button" onClick={handleBack} className="min-h-11 border border-line px-6 text-sm">Back</button>
+              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: 2 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
             </div>
+          </div>
+        )}
 
+        {draft.step === 2 && (
+          <div className="mx-auto max-w-xl">
+            <p className="text-sm text-brass">Step 3</p>
+            <h1 className="mt-2 font-display text-4xl">When is your exam?</h1>
+            <div className="mt-8 space-y-4">
+              <label className="block text-sm font-medium" htmlFor="month">Exam month</label>
+              <input
+                id="month"
+                type="month"
+                min={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`}
+                value={draft.examMonth ?? ""}
+                onChange={(event) => setDraft((current) => ({ ...current, examMonth: event.target.value || null }))}
+                className="w-full border border-line bg-surface px-3 py-3"
+              />
+            </div>
+            {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
             <div className="mt-8 flex gap-3">
               <button type="button" onClick={handleBack} className="min-h-11 border border-line px-6 text-sm">Back</button>
               <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: 3 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
@@ -250,36 +284,22 @@ function StartFlow() {
         {draft.step === 3 && (
           <div className="mx-auto max-w-xl">
             <p className="text-sm text-brass">Step 4</p>
-            <h1 className="mt-2 font-display text-4xl">When is your exam?</h1>
-            <div className="mt-8 space-y-4">
-              <label className="block text-sm font-medium" htmlFor="month">Exam month</label>
-              <input id="month" type="month" value={draft.examMonth ?? ""} onChange={(event) => setDraft((current) => ({ ...current, examMonth: event.target.value || null }))} className="w-full border border-line bg-surface px-3 py-3" />
-              <button type="button" onClick={() => setDraft((current) => ({ ...current, examMonth: null }))} className="text-sm font-semibold text-primary">I’m not sure yet</button>
-            </div>
-            <div className="mt-8 flex gap-3">
-              <button type="button" onClick={handleBack} className="min-h-11 border border-line px-6 text-sm">Back</button>
-              <button type="button" onClick={() => setDraft((current) => ({ ...current, step: 4 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg">Continue</button>
-            </div>
-          </div>
-        )}
-
-        {draft.step === 4 && draft.track && (
-          <div className="mx-auto max-w-xl">
-            <p className="text-sm text-brass">Step 5</p>
             <h1 className="mt-2 font-display text-4xl">You’re ready.</h1>
             <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
               <p className="text-sm text-brass">Student</p>
-              <p className="mt-2 font-display text-3xl">{draft.name.trim()}</p>
+              <p className="mt-2 font-display text-3xl">{sessionUser?.name || "Student"}</p>
               <div className="mt-4 space-y-2 text-sm">
-                <p><span className="text-muted">Class:</span> {tracks[draft.track].label}</p>
-                <p><span className="text-muted">Subjects:</span> {readySubjects.map((id) => subjectMap.get(id)?.name ?? id).join(", ")}</p>
-                <p><span className="text-muted">Exam:</span> {draft.examMonth ? new Date(`${draft.examMonth}-01T00:00:00`).toLocaleString("en-US", { month: "long", year: "numeric" }) : "Not set yet"}</p>
+                <p><span className="text-muted">Exam:</span> {draft.exam === "jamb" ? "Joint Admissions and Matriculation Board" : "West African Examination Council"}</p>
+                <p><span className="text-muted">Subjects:</span> {draft.subjects.map((id) => subjectMap.get(id)?.name ?? id).join(", ")}</p>
+                <p><span className="text-muted">Exam month:</span> {new Date(`${draft.examMonth}-01T00:00:00`).toLocaleString("en-US", { month: "long", year: "numeric" })}</p>
               </div>
             </div>
             <p className="mt-6 text-sm text-muted">Your two free days start now.</p>
             <div className="mt-8 flex gap-3">
               <button type="button" onClick={handleBack} className="min-h-11 border border-line px-6 text-sm">Back</button>
-              <button type="button" onClick={submit} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg">Open my dashboard</button>
+              <button type="button" disabled={submitting} onClick={submit} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-60">
+                {submitting ? "Saving…" : "Open my dashboard"}
+              </button>
             </div>
           </div>
         )}
