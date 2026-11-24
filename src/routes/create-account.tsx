@@ -33,6 +33,7 @@ function CreateAccount() {
   const [errors, setErrors] = useState<Errors>({});
   const [show, setShow] = useState(false);
   const [status, setStatus] = useState<"idle" | "submitting" | "google" | "error">("idle");
+  const [formError, setFormError] = useState("");
   const submittingRef = useRef(false);
 
   function set<K extends keyof Fields>(key: K, value: string) {
