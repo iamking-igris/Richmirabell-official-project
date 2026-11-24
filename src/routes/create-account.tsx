@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BrandMark } from "@/components/brand";
 import { googleClientId, promptGoogleSignIn } from "@/lib/google";
 import { useSession } from "@/lib/session";
@@ -33,7 +33,7 @@ function CreateAccount() {
   const [errors, setErrors] = useState<Errors>({});
   const [show, setShow] = useState(false);
   const [status, setStatus] = useState<"idle" | "submitting" | "google" | "error">("idle");
-  const [formError, setFormError] = useState("");
+  const submittingRef = useRef(false);
 
   function set<K extends keyof Fields>(key: K, value: string) {
     setFields((current) => ({ ...current, [key]: value }));
@@ -118,6 +118,7 @@ function CreateAccount() {
               noValidate
               onSubmit={async (event) => {
                 event.preventDefault();
+                if (submittingRef.current) return;
                 const next = validate(fields);
                 setErrors(next);
                 if (Object.keys(next).length > 0) {
@@ -127,10 +128,12 @@ function CreateAccount() {
                 }
                 setStatus("submitting");
                 setFormError("");
+                submittingRef.current = true;
                 try {
                   await register(fields.name.trim(), fields.email.trim(), fields.password);
                   navigate({ to: "/start" });
                 } catch (err) {
+                  submittingRef.current = false;
                   setStatus("error");
                   setFormError(
                     err instanceof ApiError ? err.message : "Could not create your account. Try again.",
