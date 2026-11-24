@@ -1,5 +1,6 @@
 import type { ExtractedQuestion, ExtractedAnswer } from "@/types/question-import";
 import { classifyAiExtractionFailure } from "@/lib/content-errors";
+import { aiRequest, AiRequestError } from "@/services/api/ai";
 
 export type ExtractQuestionsResult =
   | { ok: true; questions: ExtractedQuestion[] }
@@ -9,8 +10,54 @@ export type ExtractAnswersResult =
   | { ok: true; answers: ExtractedAnswer[] }
   | { ok: false; message: string };
 
+export type ExtractTheoryResult =
+  | { ok: true; theoryQuestions: any[] }
+  | { ok: false; message: string };
+
 /**
- * Calls server endpoint to parse questions from an uploaded examination page.
+ * Run one OCR extraction call and normalise every failure through
+ * `classifyAiExtractionFailure`, exactly as the Express-backed version did —
+ * only the transport changed (same-origin `/api/*` → FastAPI `/api/v1/ai/ocr/*`).
+ */
+async function runOcr<T>(
+  path: string,
+  body: Record<string, unknown>,
+  fallback: string,
+): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
+  try {
+    const data = await aiRequest<{ ok: boolean } & Record<string, unknown>>(path, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return { ok: true, data: data as T };
+  } catch (err) {
+    const failure = classifyAiExtractionFailure(
+      err instanceof AiRequestError
+        ? { statusCode: err.statusCode, code: err.code, message: err.message }
+        : { statusCode: 500, message: (err as Error)?.message || fallback },
+      fallback,
+    );
+    return { ok: false, message: failure.message };
+  }
+}
+
+function networkMessage(err: unknown, fallback: string): string {
+  const raw = String((err as Error)?.message || "");
+  const isNetwork =
+    err instanceof AiRequestError
+      ? err.code === "network"
+      : err instanceof TypeError ||
+        raw.includes("fetch failed") ||
+        raw.includes("Failed to fetch") ||
+        raw.includes("NetworkError") ||
+        raw.includes("Load failed");
+  return isNetwork
+    ? `Could not reach the extraction service. Check your connection and try again.`
+    : raw || fallback;
+}
+
+/**
+ * Calls the backend to parse questions from an uploaded examination page.
  */
 export async function extractQuestionsFromPage(
   fileBase64: string,
@@ -20,27 +67,16 @@ export async function extractQuestionsFromPage(
   sourceFileId: string,
   pageNumber: number = 1
 ): Promise<ExtractQuestionsResult> {
+  const fallback = "Failed to extract questions from page.";
   try {
-    const res = await fetch("/api/ocr/extract-questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileBase64, mimeType, sourceFileName }),
-    });
+    const result = await runOcr<{ questions?: any[] }>(
+      "/ai/ocr/extract-questions",
+      { fileBase64, mimeType, sourceFileName },
+      fallback,
+    );
+    if (!result.ok) return { ok: false, message: result.message };
 
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok || !data?.ok) {
-      const failure = classifyAiExtractionFailure(
-        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract questions from page." },
-        "Failed to extract questions from page.",
-      );
-      return {
-        ok: false,
-        message: failure.message,
-      };
-    }
-
-    const questions: ExtractedQuestion[] = (data.questions || []).map((q: any) => ({
+    const questions: ExtractedQuestion[] = (result.data.questions || []).map((q: any) => ({
       ...q,
       batchId,
       sourceFileId,
@@ -49,25 +85,13 @@ export async function extractQuestionsFromPage(
     }));
 
     return { ok: true, questions };
-  } catch (err: any) {
-    const raw = String(err?.message || "");
-    const isNetwork =
-      err instanceof TypeError ||
-      raw.includes("fetch failed") ||
-      raw.includes("Failed to fetch") ||
-      raw.includes("NetworkError") ||
-      raw.includes("Load failed");
-    return {
-      ok: false,
-      message: isNetwork
-        ? "Could not reach the question extraction service. Check that the frontend server is running and try again."
-        : raw || "Failed to extract questions from page.",
-    };
+  } catch (err) {
+    return { ok: false, message: networkMessage(err, fallback) };
   }
 }
 
 /**
- * Calls server endpoint to parse answer keys and explanations from an uploaded key page.
+ * Calls the backend to parse answer keys and explanations from an uploaded key page.
  */
 export async function extractAnswersFromPage(
   fileBase64: string,
@@ -77,27 +101,16 @@ export async function extractAnswersFromPage(
   sourceFileId: string,
   pageNumber: number = 1
 ): Promise<ExtractAnswersResult> {
+  const fallback = "Failed to extract answers from key page.";
   try {
-    const res = await fetch("/api/ocr/extract-answers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileBase64, mimeType, sourceFileName }),
-    });
+    const result = await runOcr<{ answers?: any[] }>(
+      "/ai/ocr/extract-answers",
+      { fileBase64, mimeType, sourceFileName },
+      fallback,
+    );
+    if (!result.ok) return { ok: false, message: result.message };
 
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok || !data?.ok) {
-      const failure = classifyAiExtractionFailure(
-        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract answers from key page." },
-        "Failed to extract answers from key page.",
-      );
-      return {
-        ok: false,
-        message: failure.message,
-      };
-    }
-
-    const answers: ExtractedAnswer[] = (data.answers || []).map((a: any) => ({
+    const answers: ExtractedAnswer[] = (result.data.answers || []).map((a: any) => ({
       ...a,
       batchId,
       sourceFileId,
@@ -106,29 +119,13 @@ export async function extractAnswersFromPage(
     }));
 
     return { ok: true, answers };
-  } catch (err: any) {
-    const raw = String(err?.message || "");
-    const isNetwork =
-      err instanceof TypeError ||
-      raw.includes("fetch failed") ||
-      raw.includes("Failed to fetch") ||
-      raw.includes("NetworkError") ||
-      raw.includes("Load failed");
-    return {
-      ok: false,
-      message: isNetwork
-        ? "Could not reach the answer extraction service. Check that the frontend server is running and try again."
-        : raw || "Failed to extract answers from page.",
-    };
+  } catch (err) {
+    return { ok: false, message: networkMessage(err, fallback) };
   }
 }
 
-export type ExtractTheoryResult =
-  | { ok: true; theoryQuestions: any[] }
-  | { ok: false; message: string };
-
 /**
- * Calls server endpoint to parse and independently solve theory questions from an uploaded page.
+ * Calls the backend to parse and independently solve theory questions from an uploaded page.
  */
 export async function extractTheoryFromPage(
   fileBase64: string,
@@ -138,27 +135,16 @@ export async function extractTheoryFromPage(
   sourceFileId: string,
   pageNumber: number = 1
 ): Promise<ExtractTheoryResult> {
+  const fallback = "Failed to extract theory questions from page.";
   try {
-    const res = await fetch("/api/ocr/extract-theory", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileBase64, mimeType, sourceFileName }),
-    });
+    const result = await runOcr<{ theoryQuestions?: any[] }>(
+      "/ai/ocr/extract-theory",
+      { fileBase64, mimeType, sourceFileName },
+      fallback,
+    );
+    if (!result.ok) return { ok: false, message: result.message };
 
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok || !data?.ok) {
-      const failure = classifyAiExtractionFailure(
-        { statusCode: res.status, code: data?.code, message: data?.message || "Failed to extract theory questions from page." },
-        "Failed to extract theory questions from page.",
-      );
-      return {
-        ok: false,
-        message: failure.message,
-      };
-    }
-
-    const theoryQuestions = (data.theoryQuestions || []).map((t: any) => ({
+    const theoryQuestions = (result.data.theoryQuestions || []).map((t: any) => ({
       ...t,
       batchId,
       sourceFileId,
@@ -167,20 +153,7 @@ export async function extractTheoryFromPage(
     }));
 
     return { ok: true, theoryQuestions };
-  } catch (err: any) {
-    const raw = String(err?.message || "");
-    const isNetwork =
-      err instanceof TypeError ||
-      raw.includes("fetch failed") ||
-      raw.includes("Failed to fetch") ||
-      raw.includes("NetworkError") ||
-      raw.includes("Load failed");
-    return {
-      ok: false,
-      message: isNetwork
-        ? "Could not reach the theory extraction service. Check that the frontend server is running and try again."
-        : raw || "Failed to extract theory questions from page.",
-    };
+  } catch (err) {
+    return { ok: false, message: networkMessage(err, fallback) };
   }
 }
-

@@ -1,11 +1,12 @@
 import type { NoteDocument, NoteBlock } from "@/lib/note-schema";
+import { aiRequest, AiRequestError } from "@/services/api/ai";
 
 export type ExtractNotesResult =
   | { ok: true; data: NoteDocument }
   | { ok: false; message: string };
 
 /**
- * Server extraction function. Calls the server-side Gemini OCR endpoint
+ * Server extraction function. Calls the FastAPI-side Gemini OCR endpoint
  * to ensure API keys and models are safely kept on the server.
  */
 export async function extractNotesFromImage(
@@ -13,23 +14,14 @@ export async function extractNotesFromImage(
   mimeType: string = "image/jpeg"
 ): Promise<ExtractNotesResult> {
   try {
-    const res = await fetch("/api/extract-notes", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ fileBase64, mimeType }),
-    });
+    const json = await aiRequest<{ ok: boolean; data?: NoteDocument; message?: string }>(
+      "/ai/notes/extract",
+      {
+        method: "POST",
+        body: JSON.stringify({ fileBase64, mimeType }),
+      }
+    );
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null);
-      return {
-        ok: false,
-        message: errData?.message || "Couldn't read the note. Please try a clearer photo.",
-      };
-    }
-
-    const json = await res.json();
     if (!json.ok || !json.data) {
       return {
         ok: false,
@@ -37,7 +29,7 @@ export async function extractNotesFromImage(
       };
     }
 
-    const raw = json.data;
+    const raw = json.data as any;
     const cleanBlocks: NoteBlock[] = Array.isArray(raw.blocks)
       ? raw.blocks.map((b: any, idx: number) => {
           const id = b.id || `gen-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
@@ -91,14 +83,16 @@ export async function extractNotesFromImage(
   } catch (err: any) {
     const raw = String(err?.message || "");
     const isNetwork =
-      err instanceof TypeError ||
-      raw.includes("fetch failed") ||
-      raw.includes("Failed to fetch") ||
-      raw.includes("NetworkError");
+      err instanceof AiRequestError
+        ? err.code === "network"
+        : err instanceof TypeError ||
+          raw.includes("fetch failed") ||
+          raw.includes("Failed to fetch") ||
+          raw.includes("NetworkError");
     return {
       ok: false,
       message: isNetwork
-        ? "Could not reach the extraction service. Check that the frontend server is running and try again."
+        ? "Could not reach the extraction service. Check your connection and try again."
         : raw || "Couldn't read the note. Please try a clearer photo.",
     };
   }

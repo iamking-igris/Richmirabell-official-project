@@ -1,4 +1,5 @@
-import { apiClient, getAuthToken } from "@/services/api/client";
+import { apiClient } from "@/services/api/client";
+import { aiRequest } from "@/services/api/ai";
 import { ApiError } from "@/services/api/errors";
 
 /* ------------------------------------------------------------------ */
@@ -945,13 +946,16 @@ export const weeklyExamsApi = {
   },
 
   /**
-   * Server-side Gemini relay (Express). The API key stays on the server; this
+   * Server-side Gemini relay (FastAPI). The API key stays on the server; this
    * only forwards an admin session and receives validated question JSON.
+   * Failures keep a top-level `code` (quota | rate_limit | timeout |
+   * bad_output | key_missing) so the CBT generation loop can stop cleanly.
    */
   generateWithGemini: (body: GeminiRelayRequestBody) =>
-    expressAdminRequest<GeminiRelayResponse>("/api/admin/gemini/generate-questions", {
+    aiRequest<GeminiRelayResponse>("/ai/cbt/generate-questions", {
       method: "POST",
       body: JSON.stringify(body),
+      timeoutMs: 150_000,
     }),
 };
 
@@ -1145,38 +1149,6 @@ export interface SetModelBody {
   model: string;
 }
 
-/* Admin AI settings live on the same-origin Express server (server.ts owns the
-   Gemini endpoints and credentials), NOT on FastAPI. The apiClient targets
-   FastAPI (/api/v1), so calling these through it produced /api/v1/api/admin/…
-   404s. This helper hits Express directly with the session bearer token. */
-async function expressAdminRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      Authorization: `Bearer ${getAuthToken() ?? ""}`,
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    let message = `Express admin API ${path} failed (${res.status}): ${detail.slice(0, 200)}`;
-    let code: string | undefined;
-    try {
-      const parsed = JSON.parse(detail) as { message?: string; code?: string };
-      if (parsed?.message) message = parsed.message;
-      if (parsed?.code) code = parsed.code;
-    } catch {
-      /* non-JSON error body: keep the raw message */
-    }
-    const error = new Error(message) as Error & { status?: number; code?: string };
-    error.status = res.status;
-    error.code = code;
-    throw error;
-  }
-  return (await res.json()) as T;
-}
-
 export interface SetTemperatureBody {
   category: "ocr" | "review" | "theory" | "cbt";
   temperature: number;
@@ -1261,25 +1233,25 @@ export const adminApi = {
   plans: () => apiClient.get<AdminPlan[]>("/admin/plans"),
   audit: () => apiClient.get<AuditEntry[]>("/admin/audit"),
   students: () => apiClient.get<AdminStudent[]>("/students"),
-  aiStatus: () => expressAdminRequest<AiStatus>("/api/admin/ai-status"),
+  aiStatus: () => aiRequest<AiStatus>("/ai/admin/status"),
   setModel: (body: SetModelBody) =>
-    expressAdminRequest<{ ok: boolean; model: string }>("/api/admin/set-model", {
+    aiRequest<{ ok: boolean; model: string }>("/ai/admin/model", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   setTemperature: (body: SetTemperatureBody) =>
-    expressAdminRequest<{ ok: boolean; category: string; temperature: number }>(
-      "/api/admin/set-temperature",
+    aiRequest<{ ok: boolean; category: string; temperature: number }>(
+      "/ai/admin/temperature",
       { method: "POST", body: JSON.stringify(body) },
     ),
   /* Gemini key/model configuration — server-side, persisted, never echoed raw. */
   saveGeminiConfig: (body: GeminiConfigBody) =>
-    expressAdminRequest<AiStatus>("/api/admin/gemini/config", {
+    aiRequest<AiStatus>("/ai/admin/config", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   testAi: () =>
-    expressAdminRequest<{ ok: boolean; message: string }>("/api/admin/test-ai", {
+    aiRequest<{ ok: boolean; message: string }>("/ai/admin/test", {
       method: "POST",
       body: JSON.stringify({}),
     }),

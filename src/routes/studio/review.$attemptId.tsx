@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { assessmentsApi, type AttemptDetail, type AttemptReviewPayload } from "@/lib/backend";
+import { aiRequest } from "@/services/api/ai";
 import { ApiError } from "@/services/api/errors";
 import { cn } from "@/lib/cn";
 import { InlineMathText } from "@/components/NotePreviewRenderer";
@@ -215,11 +216,28 @@ function ReviewPage() {
     setReviewError(null);
     setReviewStatus("generating");
     try {
-      const gen = await fetch("/api/student/review-attempt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attempt }),
-      }).then((r) => r.json().catch(() => null)).catch(() => null);
+      // The backend loads the attempt from the database by ownership — only
+      // the id crosses the wire, so a tampered payload can't forge answers.
+      let gen: {
+        ok?: boolean;
+        review?: unknown;
+        model?: string;
+        provider?: string;
+        message?: string;
+      } | null = null;
+      try {
+        gen = await aiRequest<{
+          ok: boolean;
+          review?: unknown;
+          model?: string;
+          provider?: string;
+        }>("/ai/student/review-attempt", {
+          method: "POST",
+          body: JSON.stringify({ attempt_id: attempt.id }),
+        });
+      } catch (err) {
+        gen = { ok: false, message: (err as Error)?.message };
+      }
 
       if (!gen || gen.ok === false || !gen.review) {
         const msg = gen?.message || "AI diagnostics are unavailable right now.";

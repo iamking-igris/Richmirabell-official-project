@@ -54,6 +54,8 @@ CRITICAL RULES:
 
 import fs from "fs";
 
+const PERMANENT_GEMINI_KEY = process.env.GEMINI_API_KEY?.trim();
+
 // ---------------------------------------------------------------------------
 // Gemini configuration (Admin → Settings → Gemini AI & OCR)
 //
@@ -113,10 +115,13 @@ function writeGeminiConfig(patch: Partial<GeminiConfigFile>, updatedBy?: string)
 function isUsableGeminiKey(key: unknown): key is string {
   if (typeof key !== "string") return false;
   const trimmed = key.trim().replace(/^["']|["']$/g, "");
-  return trimmed.length > 0 && trimmed !== "MY_GEMINI_API_KEY";
+  return (
+    trimmed.length > 0 &&
+    trimmed !== "MY_GEMINI_API_KEY"
+  );
 }
 
-type GeminiKeySource = "saved" | "environment" | "none";
+type GeminiKeySource = "saved" | "environment" | "file" | "none";
 
 /** Resolve the active key and where it comes from (never the raw value). */
 function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource } {
@@ -125,11 +130,40 @@ function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource 
     return { key: saved.trim().replace(/^["']|["']$/g, ""), source: "saved" };
   }
 
-  const envKey = process.env.GEMINI_API_KEY;
+  const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (isUsableGeminiKey(envKey)) {
     return { key: envKey.trim().replace(/^["']|["']$/g, ""), source: "environment" };
   }
 
+  const candidatePaths = [
+    path.resolve(__dirname, ".env"),
+    path.resolve(__dirname, ".dev.env.json"),
+    path.resolve(__dirname, "../.dev.env.json"),
+    "/app/.dev.env.json",
+  ];
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        if (p.endsWith(".env")) {
+          const content = fs.readFileSync(p, "utf8");
+          const m = content.match(/GEMINI_API_KEY=["']?([^"'\r\n]+)/);
+          if (m && isUsableGeminiKey(m[1])) {
+            return { key: m[1].trim(), source: "file" };
+          }
+        } else {
+          const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
+          const key = parsed.GEMINI_API_KEY || parsed.GOOGLE_API_KEY;
+          if (isUsableGeminiKey(key)) {
+            return { key: key.trim().replace(/^["']|["']$/g, ""), source: "file" };
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if (isUsableGeminiKey(PERMANENT_GEMINI_KEY)) {
+    return { key: PERMANENT_GEMINI_KEY, source: "builtin" };
+  }
   return { key: undefined, source: "none" };
 }
 
@@ -1423,7 +1457,7 @@ GENERATION RULES (Physics):
         `"answer":"A","explanation":"...","topic":"...","difficulty":"medium","type":"conceptual"}],` +
         `"corrections":[{"prompt":"<exact original prompt>","options":{"A":"...","B":"...","C":"...","D":"..."},` +
         `"answer":"A","explanation":"...","topic":"...","difficulty":"medium","type":"numerical"}]}` +
-        (wantsCorrections ? ` — return an empty "corrections" array if none apply.` : ""),
+        (wantsCorrections ? `` : ` — return an empty "corrections" array if none apply.`),
     );
 
     const parsed = await executeGeminiTextPrompt(
@@ -1938,7 +1972,7 @@ DIRECTIVE:
       }
       const trimmed = apiKey.trim();
       if (trimmed === "") {
-        patch.apiKey = ""; // clearing falls back to GEMINI_API_KEY
+        patch.apiKey = ""; // clearing falls back to the environment/builtin key
       } else if (trimmed.length < 20 || trimmed.length > 500 || /\s/.test(trimmed)) {
         return res
           .status(400)
@@ -2334,6 +2368,7 @@ DIRECTIVE:
             .map((prompt, index) => `(${index + 1}) "${prompt.replace(/"/g, "'").slice(0, 160)}"`)
             .join("\n")}`
         : "";
+
     const isPhysics = subject === "physics";
     const physicsMixLine = isPhysics
       ? `\nQuestion-type mix: label every question with its "type" (conceptual | numerical | experimental | diagram | application) and produce a natural JAMB mixture — numerical/calculation questions must NOT dominate the batch, and include meaningful non-calculation questions.`
@@ -2539,21 +2574,677 @@ Rules:
     });
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+  // Admin AI Status & Gemini Configuration Endpoints
+  //
+  // All /api/admin/* settings routes require a valid administrator session
+  // (verified against the FastAPI backend). The response never contains the
+  // API key itself — only a masked hint and its source.
+  function geminiStatusPayload() {
+    const { key, source } = resolveGeminiKey();
+    const cfg = readGeminiConfig();
+    return {
+      ok: true,
+      configured: Boolean(key),
+      model: getGeminiModel(),
+      models: [...SUPPORTED_GEMINI_MODELS],
+      keyHint: maskGeminiKey(key),
+      keySource: source,
+      updatedAt: cfg.updatedAt ?? null,
+      updatedBy: cfg.updatedBy ?? null,
+      temperatures: getGeminiTemperatures(),
+      provider: "Google Gemini Vision (@google/genai)",
+      method: "Server-side proxy route (/api/extract-notes)",
+      secretLocation:
+        source === "saved"
+          ? "Admin settings (Gemini AI & OCR)"
+          : "AI Studio Settings > Secrets (GEMINI_API_KEY)",
+      statusText: key ? "Configured (Server-side)" : "Not configured",
+    };
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  async function adminGuard(req: any, res: any): Promise<string | null> {
+    const auth = await requireAdminInfo(req);
+    if (auth.failure) {
+      res.status(auth.failure.status).json({
+        ok: false,
+        code: auth.failure.code,
+        message: auth.failure.message,
+      });
+      return null;
+    }
+    return auth.email;
+  }
+
+  function isSupportedModel(model: unknown): model is string {
+    return (
+      typeof model === "string" &&
+      (SUPPORTED_GEMINI_MODELS as readonly string[]).includes(model.trim())
+    );
+  }
+
+  app.get("/api/admin/ai-status", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    return res.json(geminiStatusPayload());
+  });
+
+  // Add or replace the Gemini API key and/or model. Saved to
+  // .gemini-config.json and picked up by every Gemini route immediately.
+  app.post("/api/admin/gemini/config", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+
+    const { apiKey, model, clearKey } = req.body ?? {};
+    const patch: Partial<GeminiConfigFile> = {};
+
+    if (clearKey === true) {
+      patch.apiKey = "";
+    } else if (apiKey !== undefined) {
+      if (typeof apiKey !== "string") {
+        return res.status(400).json({ ok: false, message: "apiKey must be a string." });
+      }
+      const trimmed = apiKey.trim();
+      if (trimmed === "") {
+        patch.apiKey = ""; // clearing falls back to the environment/builtin key
+      } else if (trimmed.length < 20 || trimmed.length > 500 || /\s/.test(trimmed)) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "That API key does not look valid (20-500 characters, no spaces)." });
+      } else {
+        patch.apiKey = trimmed;
+      }
+    }
+
+    if (model !== undefined) {
+      if (!isSupportedModel(model)) {
+        return res.status(400).json({
+          ok: false,
+          message: `Unsupported model. Choose one of: ${SUPPORTED_GEMINI_MODELS.join(", ")}.`,
+        });
+      }
+      patch.model = model.trim();
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Provide an apiKey (or clearKey: true) and/or a model." });
+    }
+
+    writeGeminiConfig(patch, email);
+    return res.json(geminiStatusPayload());
+  });
+
+  app.post("/api/admin/set-model", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { model } = req.body ?? {};
+    if (!isSupportedModel(model)) {
+      return res.status(400).json({
+        ok: false,
+        message: `Unsupported model. Choose one of: ${SUPPORTED_GEMINI_MODELS.join(", ")}.`,
+      });
+    }
+    writeGeminiConfig({ model: model.trim() }, email);
+    return res.json({ ok: true, model: getGeminiModel() });
+  });
+
+  app.post("/api/admin/set-temperature", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { category, temperature } = req.body ?? {};
+    if (!category || typeof temperature !== "number") {
+      return res.status(400).json({ ok: false, message: "category and temperature are required." });
+    }
+    const validCategories: TemperatureCategory[] = ["ocr", "review", "theory", "cbt"];
+    if (!validCategories.includes(category as TemperatureCategory)) {
+      return res.status(400).json({ ok: false, message: "Invalid category. Use: ocr, review, theory, or cbt." });
+    }
+    if (temperature < 0 || temperature > 1) {
+      return res.status(400).json({ ok: false, message: "Temperature must be between 0 and 1." });
+    }
+    writeGeminiConfig(
+      { temperatures: { ...getGeminiTemperatures(), [category as TemperatureCategory]: temperature } },
+      email,
+    );
+    return res.json({ ok: true, category, temperature });
+  });
+
+  app.post("/api/admin/test-ai", async (req, res) => {
+    const email = await adminGuard(req, res);
+    if (email === null) return;
+    const { key, source } = resolveGeminiKey();
+    const apiKey = key;
+    if (!apiKey) {
+      return res.status(401).json({
+        ok: false,
+        message: "GEMINI_API_KEY is not configured on the server. Please check your settings in the AI Studio Settings > Secrets panel.",
+      });
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+      });
+      const model = getGeminiModel();
+      const result = await ai.models.generateContent({
+        model,
+        contents: "Respond with the single word: READY",
+      });
+      return res.json({
+        ok: true,
+        message: `Gemini API authenticated successfully. Model: ${model} (${source} key). Response: ${result.text?.trim()}`,
+      });
+    } catch (err: any) {
+      let cleanMessage = "Failed to connect to Gemini API.";
+      const status = err?.status || err?.statusCode || 500;
+      const rawText = String(err?.message || "");
+
+      let googleReason = "";
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*"error"[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsedErr = JSON.parse(jsonMatch[0]);
+          googleReason = parsedErr?.error?.details?.[0]?.reason || "";
+        }
+      } catch {}
+
+      if (
+        status === 401 ||
+        googleReason === "ACCESS_TOKEN_TYPE_UNSUPPORTED" ||
+        googleReason === "API_KEY_INVALID" ||
+        rawText.includes("401") ||
+        rawText.includes("UNAUTHENTICATED") ||
+        rawText.includes("API key not valid")
+      ) {
+        cleanMessage = "Authentication error: The configured Gemini API key is invalid or unauthorized. Please verify your GEMINI_API_KEY in the AI Studio Settings > Secrets panel.";
+      } else if (status === 429 || rawText.includes("RESOURCE_EXHAUSTED")) {
+        cleanMessage = "Quota limit reached: The Gemini API quota has been exceeded. Please try again shortly.";
+      } else if (status === 403 || rawText.includes("PERMISSION_DENIED")) {
+        cleanMessage = "Permission denied: The API key does not have access to the Generative Language API.";
+      } else if (err?.message && !err.message.includes("{")) {
+        cleanMessage = err.message;
+      }
+
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        ok: false,
+        message: cleanMessage,
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Weekly CBT: server-side Gemini relay (spec 4.1 / 4.5)
+  //
+  // The FastAPI backend owns the examination, its generation jobs and its
+  // batches. This is the single place the Gemini key is used for weekly
+  // question generation: the caller must present a valid admin session
+  // (verified against the backend) before any quota is spent, and the
+  // response is validated structured JSON with honest error classification.
+  // -------------------------------------------------------------------------
+
+  const FASTAPI_BASE_URL = (process.env.FASTAPI_URL || "http://127.0.0.1:8000/api/v1").replace(
+    /\/$/,
+    "",
+  );
+
+  type RelayErrorCode =
+    | "quota"
+    | "rate_limit"
+    | "timeout"
+    | "bad_output"
+    | "key_missing"
+    | "auth_required"
+    | "bad_request";
+
+  type RelayFailure = { status: number; code: RelayErrorCode; message: string };
+
+  // Verifying a bearer token costs one /auth/me round-trip to FastAPI
+  // (each is ~0.5-5 s against Neon). Cache verifications briefly so a burst
+  // of settings actions only pays for one round-trip; failures are never
+  // cached, so a backend blip recovers on the very next request.
+  const adminSessionCache = new Map<string, { role: string; email: string; expires: number }>();
+  const ADMIN_SESSION_CACHE_MS = 60_000;
+
+  async function requireAdminInfo(
+    req: any,
+  ): Promise<{ failure: RelayFailure | null; email: string | null }> {
+    const header = String(req.headers?.authorization || "");
+    const token = header.replace(/^bearer\s+/i, "").trim();
+    if (!token) {
+      return {
+        failure: { status: 401, code: "auth_required", message: "Admin sign-in required." },
+        email: null,
+      };
+    }
+
+    const now = Date.now();
+    const cached = adminSessionCache.get(token);
+    if (cached && cached.expires > now) {
+      if (String(cached.role).toUpperCase() !== "ADMIN") {
+        return {
+          failure: { status: 403, code: "auth_required", message: "Administrator role required." },
+          email: null,
+        };
+      }
+      return { failure: null, email: cached.email };
+    }
+
+    let user: any = null;
+    try {
+      const response = await fetch(`${FASTAPI_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        return {
+          failure: {
+            status: 401,
+            code: "auth_required",
+            message: "Your session is invalid or expired. Sign in again as an administrator.",
+          },
+          email: null,
+        };
+      }
+      user = await response.json();
+    } catch {
+      return {
+        failure: {
+          status: 503,
+          code: "auth_required",
+          message: "Could not verify the admin session because the backend is unreachable.",
+        },
+        email: null,
+      };
+    }
+
+    if (adminSessionCache.size > 200) adminSessionCache.clear();
+    adminSessionCache.set(token, {
+      role: String(user?.role || ""),
+      email: String(user?.email || ""),
+      expires: now + ADMIN_SESSION_CACHE_MS,
+    });
+
+    if (String(user?.role || "").toUpperCase() !== "ADMIN") {
+      return {
+        failure: { status: 403, code: "auth_required", message: "Administrator role required." },
+        email: null,
+      };
+    }
+    return { failure: null, email: String(user?.email || "") };
+  }
+
+  async function requireAdminSession(req: any): Promise<RelayFailure | null> {
+    return (await requireAdminInfo(req)).failure;
+  }
+
+  function classifyGeminiFailure(err: any): RelayFailure {
+    const raw = String(err?.message || "");
+    const status = Number(err?.status || err?.statusCode || 0);
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("timed out") || lower.includes("timeout") || err?.name === "TimeoutError") {
+      return {
+        status: 504,
+        code: "timeout",
+        message: "The AI request timed out before finishing. Retry this batch.",
+      };
+    }
+    if (status === 429 || raw.includes("RESOURCE_EXHAUSTED") || lower.includes("rate limit")) {
+      const looksLikeQuota = lower.includes("quota") || raw.includes("LIMIT") || lower.includes("billing");
+      if (looksLikeQuota) {
+        return {
+          status: 503,
+          code: "quota",
+          message: "The Gemini API quota for this project is exhausted. Generation is paused until the quota resets.",
+        };
+      }
+      return {
+        status: 429,
+        code: "rate_limit",
+        message: "Gemini is rate limiting requests right now. Wait a moment and retry this batch.",
+      };
+    }
+    if (status === 401 || status === 403 || lower.includes("api key not valid") || lower.includes("unauthenticated")) {
+      return {
+        status: 503,
+        code: "key_missing",
+        message: "The server's Gemini API key is missing or rejected. Configure GEMINI_API_KEY on the server.",
+      };
+    }
+    if (lower.includes("timed out") === false && (lower.includes("parse") || lower.includes("json") || lower.includes("empty response"))) {
+      return {
+        status: 502,
+        code: "bad_output",
+        message: "Gemini returned a response that could not be read as valid question JSON. Retry this batch.",
+      };
+    }
+    if (status === 503 && lower.includes("gemini_api_key")) {
+      return {
+        status: 503,
+        code: "key_missing",
+        message: "GEMINI_API_KEY is not configured on the server.",
+      };
+    }
+    return {
+      status: 502,
+      code: "bad_output",
+      message: `Gemini generation failed: ${raw.slice(0, 300) || "unknown error"}`,
+    };
+  }
+
+  type RelayQuestion = {
+    prompt: string;
+    options: Record<string, string>;
+    answer: string;
+    explanation: string;
+    subject: string;
+    topic: string;
+    difficulty: string;
+    /** Physics only: the model's own question-type classification. */
+    type: string;
+  };
+
+  function normalizeRelayQuestion(raw: any, subject: string): RelayQuestion | null {
+    if (!raw || typeof raw !== "object") return null;
+    const prompt = String(raw.prompt ?? raw.question_text ?? "").trim();
+    if (prompt.length < 5) return null;
+
+    const sourceOptions = raw.options;
+    const options: Record<string, string> = {};
+    if (Array.isArray(sourceOptions)) {
+      for (const entry of sourceOptions) {
+        const key = String(entry?.key ?? entry?.label ?? "").trim().toUpperCase();
+        const text = String(entry?.text ?? entry?.value ?? "").trim();
+        if (key && text) options[key] = text;
+      }
+    } else if (sourceOptions && typeof sourceOptions === "object") {
+      for (const [key, value] of Object.entries(sourceOptions)) {
+        const normalizedKey = String(key).trim().toUpperCase();
+        const text = String(value ?? "").trim();
+        if (normalizedKey && text) options[normalizedKey] = text;
+      }
+    }
+    if (Object.keys(options).length !== 4) return null;
+    for (const key of ["A", "B", "C", "D"]) {
+      if (!options[key]) return null;
+    }
+
+    const answer = String(raw.answer ?? raw.correct_answer ?? "").trim().toUpperCase();
+    if (!["A", "B", "C", "D"].includes(answer)) return null;
+
+    const explanation = String(raw.explanation ?? raw.explain ?? "").trim();
+    if (explanation.length < 5) return null;
+
+    return {
+      prompt,
+      options,
+      answer,
+      explanation,
+      topic: String(raw.topic || "General").trim().slice(0, 120),
+      difficulty: ["easy", "medium", "hard"].includes(String(raw.difficulty || "").toLowerCase())
+        ? String(raw.difficulty).toLowerCase()
+        : "medium",
+      type: parseQuestionType(raw),
+      subject,
+    };
+  }
+
+  app.post("/api/admin/gemini/generate-questions", async (req, res) => {
+    const authFailure = await requireAdminSession(req);
+    if (authFailure) {
+      return res.status(authFailure.status).json({
+        ok: false,
+        code: authFailure.code,
+        message: authFailure.message,
+      });
+    }
+
+    const subject = String(req.body?.subject || "").trim().toLowerCase();
+    const validSubjects = ["english", "mathematics", "physics", "chemistry", "biology"];
+    if (!validSubjects.includes(subject)) {
+      return res.status(400).json({
+        ok: false,
+        code: "bad_request",
+        message: `subject must be one of: ${validSubjects.join(", ")}.`,
+      });
+    }
+
+    const requestedCount = Number(req.body?.count ?? 10);
+    if (!Number.isFinite(requestedCount) || requestedCount < 1 || requestedCount > 20) {
+      return res.status(400).json({
+        ok: false,
+        code: "bad_request",
+        message: "count must be between 1 and 20 questions per batch (spec 4.1).",
+      });
+    }
+    const count = Math.floor(requestedCount);
+
+    const topicFocus = String(req.body?.topic_focus || req.body?.topic || "").trim().slice(0, 200);
+    const difficulty = String(req.body?.difficulty || "medium").trim().slice(0, 40);
+    const syllabusFocus = String(req.body?.syllabus_focus || "").trim().slice(0, 500);
+    const excludePrompts: string[] = Array.isArray(req.body?.exclude_prompts)
+      ? (req.body.exclude_prompts as unknown[]).slice(0, 60).map((value) => String(value).trim()).filter(Boolean)
+      : [];
+
+    if (!getGeminiApiKey()) {
+      return res.status(503).json({
+        ok: false,
+        code: "key_missing",
+        message: "GEMINI_API_KEY is not configured on the server. Add it in AI Studio Settings > Secrets.",
+      });
+    }
+
+    const exclusionBlock =
+      excludePrompts.length > 0
+        ? `\nDO NOT duplicate or re-word any of these existing questions:\n${excludePrompts
+            .map((prompt, index) => `(${index + 1}) "${prompt.replace(/"/g, "'").slice(0, 160)}"`)
+            .join("\n")}`
+        : "";
+
+    const isPhysics = subject === "physics";
+    const physicsMixLine = isPhysics
+      ? `\nQuestion-type mix: label every question with its "type" (conceptual | numerical | experimental | diagram | application) and produce a natural JAMB mixture — numerical/calculation questions must NOT dominate the batch, and include meaningful non-calculation questions.`
+      : "";
+    const typeField = isPhysics ? `,"type":"conceptual"` : "";
+
+    const instruction = `Generate exactly ${count} authentic Nigerian JAMB UTME multiple-choice questions.
+Subject: ${subject}
+${topicFocus ? `Syllabus topic: ${topicFocus}` : "Cover the broad JAMB syllabus for this subject."}
+Difficulty: ${difficulty}
+${syllabusFocus ? `Syllabus focus: ${syllabusFocus}` : ""}${physicsMixLine}${exclusionBlock}
+
+Return ONLY a JSON object with this exact shape and nothing else:
+{"questions":[{"prompt":"question text","options":{"A":"option one","B":"option two","C":"option three","D":"option four"},"answer":"A","explanation":"why the answer is correct","topic":"syllabus topic","difficulty":"medium"${typeField}}]}
+
+Rules:
+- Exactly ${count} questions, each with four distinct options A-D.
+- "answer" must be one of A, B, C, D.
+- Every question needs a real explanation.
+- Randomise the correct key across A, B, C, and D.
+- Never state or imply that these are official JAMB questions; they are practice questions modelled on the JAMB syllabus.`;
+
+    let parsed: any;
+    let lastFailure: RelayFailure | null = null;
+    // One structural retry on unparseable/empty Gemini output (bad_output only).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        parsed = await executeGeminiTextPrompt(
+          cbtSystemPrompt(subject),
+          instruction,
+          temperatureFor("cbt"),
+          60000,
+        );
+        lastFailure = null;
+        break;
+      } catch (err: any) {
+        const failure = classifyGeminiFailure(err);
+        lastFailure = failure;
+        const retryable =
+          failure.code === "bad_output" && /parse|json|empty response/i.test(String(err?.message || ""));
+        if (!retryable || attempt === 1) break;
+        console.warn(`[weekly-gemini] ${failure.code} (attempt ${attempt + 1}), retrying once: ${failure.message}`);
+      }
+    }
+    if (lastFailure) {
+      console.warn(`[weekly-gemini] ${lastFailure.code}: ${lastFailure.message}`);
+      return res.status(lastFailure.status).json({
+        ok: false,
+        code: lastFailure.code,
+        message: lastFailure.message,
+      });
+    }
+
+    const rawList = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.questions) ? parsed.questions : null;
+    if (!rawList) {
+      return res.status(502).json({
+        ok: false,
+        code: "bad_output",
+        message: "Gemini returned JSON without a questions array. Retry this batch.",
+      });
+    }
+
+    const questions: RelayQuestion[] = [];
+    const seenPrompts = new Set<string>();
+    let inBatchDuplicates = 0;
+    for (const entry of rawList) {
+      const normalized = normalizeRelayQuestion(entry, subject);
+      if (!normalized) continue;
+      const key = normalizeForDup(normalized.prompt);
+      if (seenPrompts.has(key)) {
+        inBatchDuplicates += 1;
+        continue;
+      }
+      seenPrompts.add(key);
+      questions.push(normalized);
+    }
+
+    if (questions.length === 0) {
+      return res.status(502).json({
+        ok: false,
+        code: "bad_output",
+        message: `Gemini returned ${rawList.length} entries but none were structurally valid questions. Retry this batch.`,
+        rejected: rawList.length,
+      });
+    }
+
+    /* ---------------- Physics diversity gate + targeted repair ---------------- */
+    let repaired = false;
+    let correctionsApplied = 0;
+    let droppedDominant = 0;
+    let repairNotes: string[] = [];
+    let rejectedFromRepair = 0;
+
+    if (isPhysics) {
+      const assessment = assessPhysicsDiversity(questions, count);
+
+      // Suspected numericals: explanation shows no digits and no working.
+      const suspects = questions.filter(numericalNeedsAttention);
+      const unclassified = questions.filter((question) => question.type === "unclassified");
+
+      // Deficit: how many more non-numerical questions are needed to clear the floor.
+      const nonNumericalNow =
+        questions.length - assessment.byType.numerical - assessment.byType.unclassified;
+      const deficitCount = Math.max(0, assessment.nonNumericalFloor - nonNumericalNow);
+      const deficientTypes = PHYSICS_QUESTION_TYPES.filter(
+        (type) => type !== "numerical" && assessment.byType[type] > 0,
+      ).slice(0, 2);
+      if (deficitCount > 0 && deficientTypes.length === 0) {
+        deficientTypes.push("conceptual", "application");
+      }
+
+      const needsRepair =
+        assessment.issues.length > 0 || suspects.length > 0 || unclassified.length > 0;
+
+      if (needsRepair) {
+        repairNotes = [...assessment.issues];
+        if (suspects.length > 0) {
+          repairNotes.push(
+            `${suspects.length} numerical question(s) flagged for answer/unit verification`,
+          );
+        }
+        try {
+          const repair = await repairPhysicsBatch({
+            subject,
+            topicFocus,
+            difficulty,
+            count,
+            existing: questions,
+            exclusions: excludePrompts,
+            deficitTypes: deficitCount > 0 ? [...new Set(deficientTypes)] : [],
+            deficitCount,
+            toVerify: suspects.length > 0 ? suspects : assessment.issues.length > 0 && assessment.byType.numerical > 0
+              ? questions.filter((question) => question.type === "numerical")
+              : [],
+            toClassify: unclassified,
+          });
+          rejectedFromRepair = repair.rejected;
+
+          // Apply corrections in place (matched by normalized prompt).
+          for (const question of questions) {
+            const fix = repair.corrections.get(normalizeForDup(question.prompt));
+            if (fix) {
+              question.options = fix.options;
+              question.answer = fix.answer;
+              question.explanation = fix.explanation;
+              if (fix.type !== "unclassified") question.type = fix.type;
+              correctionsApplied += 1;
+            }
+          }
+
+          // Merge genuinely new, non-duplicate questions.
+          let addedCount = 0;
+          for (const added of repair.added) {
+            const key = normalizeForDup(added.prompt);
+            if (seenPrompts.has(key)) continue;
+            seenPrompts.add(key);
+            questions.push(added);
+            addedCount += 1;
+          }
+          if (addedCount > 0) repairNotes.push(`${addedCount} replacement question(s) added`);
+          repaired = true;
+        } catch (repairErr: any) {
+          // A failed repair must never lose the valid first-pass questions.
+          repairNotes.push(
+            `targeted repair call failed (${String(repairErr?.message || repairErr).slice(0, 120)}); keeping first-pass questions`,
+          );
+          console.warn("[weekly-gemini] repair failed:", repairErr?.message);
+        }
+      }
+
+      // Trim back to exactly `count`, dropping from the most abundant type.
+      const trim = trimToCount(questions, count);
+      questions.splice(0, questions.length, ...trim.kept);
+      droppedDominant = trim.dropped;
+      if (trim.dropped > 0) {
+        repairNotes.push(
+          `${trim.dropped} excess question(s) dropped from type "${trim.droppedFrom}" to meet the requested count`,
+        );
+      }
+
+      if (inBatchDuplicates > 0) repairNotes.push(`${inBatchDuplicates} duplicate prompt(s) removed`);
+    }
+
+    return res.json({
+      ok: true,
+      subject,
+      requested: count,
+      returned: questions.length,
+      rejected: rawList.length - questions.length - inBatchDuplicates + rejectedFromRepair,
+      questions,
+      ...(isPhysics
+        ? {
+            types: questions.reduce<Record<string, number>>((acc, question) => {
+              acc[question.type] = (acc[question.type] ?? 0) + 1;
+              return acc;
+            }, {}),
+            repaired,
+            repair_notes: repairNotes,
+            corrections_applied: correctionsApplied,
+            dropped_dominant: droppedDominant,
+          }
+        : {}),
+    });
   });
 }
 

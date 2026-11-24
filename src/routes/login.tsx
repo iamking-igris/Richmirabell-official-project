@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BrandMark } from "@/components/brand";
 import { googleClientId, promptGoogleSignIn } from "@/lib/google";
 import { useSession } from "@/lib/session";
@@ -13,6 +13,8 @@ function Login() {
   const loginWithGoogle = useSession((s) => s.loginWithGoogle);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"email" | "google" | null>(null);
+  const submittingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   async function finish(user: { role: string; onboarding_complete: boolean }) {
     if (user.role === "ADMIN") {
@@ -25,9 +27,12 @@ function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper px-4">
       <form
+        ref={formRef}
         className="w-full max-w-md rounded-3xl border border-line bg-surface p-8"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (submittingRef.current) return;
+          submittingRef.current = true;
           const data = new FormData(e.currentTarget);
           const email = String(data.get("email") || "").trim();
           const password = String(data.get("password") || "");
@@ -39,6 +44,7 @@ function Login() {
           } catch (err) {
             setError(err instanceof ApiError ? err.message : "Could not sign in. Try again.");
           } finally {
+            submittingRef.current = false;
             setBusy(null);
           }
         }}
