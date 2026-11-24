@@ -133,122 +133,6 @@ function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource 
   return { key: undefined, source: "none" };
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const SYSTEM_PROMPT = `You are an expert educational OCR engine for the Richmirabel app. 
-Your job is to look at this handwritten note, understand the layout, and convert it into a structured JSON format.
-
-Use these visual cues to categorize the text:
-1. "title": The largest, most prominent text at the top of the page.
-2. "subtitle": A smaller sentence right below the title explaining what the note is about.
-3. "meta": Any small text at the top indicating time, date, or questions (e.g., "20 mins").
-4. "objectives": If you see a list of goals, learning objectives, OR a list of variable definitions / symbol meanings (e.g., "u = initial velocity", "v = final velocity"), put each item into the "items" array of an "objectives" block.
-5. "heading": Words that are underlined, written larger, or isolated on their own line.
-6. "paragraph": Standard blocks of handwritten text. Always convert inline math symbols and expressions to KaTeX LaTeX notation (e.g., \\mu, F_{12}, \\alpha, \\frac{a}{b}, v_0). When transcribing variable definitions or symbol meanings inside a paragraph, write each variable definition on a new line (e.g. "u = initial velocity\\nv = final velocity\\na = acceleration") so it can be formatted as a structured definition list.
-7. "formula": Any standalone mathematical equation. YOU MUST convert these to clean KaTeX-compatible LaTeX (e.g., s = \\frac{u+v}{2} t, E_k = \\frac{1}{2}mv^2, v = f \\lambda). Do NOT wrap in markdown backticks or dollar signs.
-
-Output MUST strictly match this JSON structure:
-{
-  "subject": "String",
-  "topic": "String",
-  "title": "String",
-  "subtitle": "String",
-  "meta": "String",
-  "blocks": [
-    { "id": "gen-uuid-1", "type": "objectives", "items": ["Goal 1", "u = initial velocity", "v = final velocity"] },
-    { "id": "gen-uuid-2", "type": "heading", "text": "Heading text" },
-    { "id": "gen-uuid-3", "type": "paragraph", "text": "Paragraph text with inline math \\mu and F_{12}" },
-    { "id": "gen-uuid-4", "type": "formula", "latex": "s = \\frac{u+v}{2} t" }
-  ]
-}
-
-CRITICAL RULES:
-1. Generate a random unique string for every "id".
-2. Return ONLY the raw JSON. No markdown formatting, no backticks.
-3. If handwriting is messy, make your best educational guess based on context.`;
-
-import fs from "fs";
-
-// ---------------------------------------------------------------------------
-// Gemini configuration (Admin → Settings → Gemini AI & OCR)
-//
-// The API key, model and temperatures chosen by an administrator are
-// persisted to a small JSON file next to this server so every Gemini-powered
-// route (notes OCR, question OCR, theory marking, attempt review, CBT
-// generation, the weekly relay) shares ONE configuration. Each request reads
-// it fresh, so a saved change takes effect immediately — no restart, no code
-// edits, no duplicate clients. The file is listed in .gitignore and the key
-// is never echoed back to the browser (only a masked hint).
-// ---------------------------------------------------------------------------
-const GEMINI_CONFIG_PATH = path.resolve(__dirname, ".gemini-config.json");
-
-const SUPPORTED_GEMINI_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro",
-] as const;
-
-const DEFAULT_GEMINI_TEMPERATURES = { ocr: 0.0, review: 0.2, theory: 0.1, cbt: 0.8 };
-
-type GeminiTemperatureCategory = keyof typeof DEFAULT_GEMINI_TEMPERATURES;
-
-type GeminiConfigFile = {
-  apiKey?: string;
-  model?: string;
-  temperatures?: Partial<typeof DEFAULT_GEMINI_TEMPERATURES>;
-  updatedAt?: string;
-  updatedBy?: string;
-};
-
-function readGeminiConfig(): GeminiConfigFile {
-  try {
-    if (!fs.existsSync(GEMINI_CONFIG_PATH)) return {};
-    const parsed = JSON.parse(fs.readFileSync(GEMINI_CONFIG_PATH, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as GeminiConfigFile) : {};
-  } catch {
-    // Unreadable/corrupt file: behave like "no saved configuration".
-    return {};
-  }
-}
-
-function writeGeminiConfig(patch: Partial<GeminiConfigFile>, updatedBy?: string): GeminiConfigFile {
-  const current = readGeminiConfig();
-  const next: GeminiConfigFile = { ...current, ...patch };
-  if (updatedBy) next.updatedBy = updatedBy;
-  next.updatedAt = new Date().toISOString();
-  // Atomic replace so a concurrent request never reads a half-written file.
-  const tmp = `${GEMINI_CONFIG_PATH}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, GEMINI_CONFIG_PATH);
-  return next;
-}
-
-function isUsableGeminiKey(key: unknown): key is string {
-  if (typeof key !== "string") return false;
-  const trimmed = key.trim().replace(/^["']|["']$/g, "");
-  return trimmed.length > 0 && trimmed !== "MY_GEMINI_API_KEY";
-}
-
-type GeminiKeySource = "saved" | "environment" | "none";
-
-/** Resolve the active key and where it comes from (never the raw value). */
-function resolveGeminiKey(): { key: string | undefined; source: GeminiKeySource } {
-  const saved = readGeminiConfig().apiKey;
-  if (isUsableGeminiKey(saved)) {
-    return { key: saved.trim().replace(/^["']|["']$/g, ""), source: "saved" };
-  }
-
-  const envKey = process.env.GEMINI_API_KEY;
-  if (isUsableGeminiKey(envKey)) {
-    return { key: envKey.trim().replace(/^["']|["']$/g, ""), source: "environment" };
-  }
-
-  return { key: undefined, source: "none" };
-}
-
 function getGeminiApiKey(): string | undefined {
   return resolveGeminiKey().key;
 }
@@ -2653,6 +2537,23 @@ Rules:
           }
         : {}),
     });
+  });
+
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

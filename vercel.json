@@ -1,0 +1,15 @@
+{
+  "routes": [
+    {
+      "src": "^/api(?:/.*)?$",
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/(?!api(?:/|$)).*$",
+      "dest": "/index.html"
+    }
+  ]
+}
