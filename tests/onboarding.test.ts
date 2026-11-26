@@ -4,9 +4,19 @@ import {
   isValidExamMonth,
   isValidJambSelection,
   normalizeJambSelection,
+  toggleSelectedExam,
+  JAMB_SELECTABLE_SUBJECT_IDS,
+  JAMB_SELECTABLE_SUBJECT_LABELS,
 } from "../src/lib/onboarding.ts";
 
 const available = ["english", "mathematics", "physics", "chemistry", "biology"];
+
+test("examination selection supports WAEC, JAMB, and both", () => {
+  assert.deepEqual(toggleSelectedExam([], "waec"), ["waec"]);
+  assert.deepEqual(toggleSelectedExam([], "jamb"), ["jamb"]);
+  assert.deepEqual(toggleSelectedExam(["waec"], "jamb"), ["waec", "jamb"]);
+  assert.deepEqual(toggleSelectedExam(["waec", "jamb"], "waec"), ["jamb"]);
+});
 
 test("JAMB selection always includes English and exactly three electives", () => {
   assert.equal(isValidJambSelection(["english", "mathematics", "physics", "chemistry"], available), true);
@@ -21,11 +31,22 @@ test("JAMB selection normalizes duplicates and unavailable subjects", () => {
   );
 });
 
-test("examination month rejects malformed and past dates", () => {
+test("examination month is optional and supplied dates must be current or future", () => {
   const now = new Date("2026-11-24T12:00:00");
+  assert.equal(isValidExamMonth(null, now), true);
+  assert.equal(isValidExamMonth("", now), true);
   assert.equal(isValidExamMonth("2026-11", now), true);
   assert.equal(isValidExamMonth("2027-01", now), true);
   assert.equal(isValidExamMonth("2026-10", now), false);
   assert.equal(isValidExamMonth("2026-13", now), false);
-  assert.equal(isValidExamMonth("", now), false);
+});
+
+test("JAMB catalogue exposes the four canonical elective subjects", () => {
+  assert.deepEqual([...JAMB_SELECTABLE_SUBJECT_IDS], ["mathematics", "physics", "chemistry", "biology"]);
+  assert.deepEqual(JAMB_SELECTABLE_SUBJECT_LABELS, {
+    mathematics: "Mathematics",
+    physics: "Physics",
+    chemistry: "Chemistry",
+    biology: "Biology",
+  });
 });

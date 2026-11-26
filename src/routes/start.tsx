@@ -6,9 +6,13 @@ import {
   isValidExamMonth,
   isValidJambSelection,
   normalizeJambSelection,
+  toggleSelectedExam,
+  JAMB_SELECTABLE_SUBJECT_IDS,
+  JAMB_SELECTABLE_SUBJECT_LABELS,
   type OnboardingExam,
 } from "@/lib/onboarding";
 import { useSession } from "@/lib/session";
+
 
 export const Route = createFileRoute("/start")({ component: StartFlow });
 
@@ -17,7 +21,7 @@ const STORAGE_KEY = "richmirabel-start-draft";
 const stepTitles = ["Examination", "JAMB subjects", "Exam date", "Ready"];
 
 type Draft = {
-  exam: OnboardingExam | null;
+  exams: OnboardingExam[];
   subjects: string[];
   examMonth: string | null;
   step: number;
@@ -44,17 +48,13 @@ function StartFlow() {
       parsed = {};
     }
 
-    const exam = parsed.exam === "waec" || parsed.exam === "jamb"
-      ? parsed.exam
-      : existingExams.includes("waec")
-        ? "waec"
-        : existingExams.includes("jamb")
-          ? "jamb"
-          : null;
+    const savedExams = Array.isArray((parsed as Partial<Draft>).exams)
+      ? (parsed as Partial<Draft>).exams!.filter((exam) => exam === "waec" || exam === "jamb")
+      : existingExams.filter((exam) => exam === "waec" || exam === "jamb") as OnboardingExam[];
 
     const savedSubjects = Array.isArray(parsed.subjects) ? parsed.subjects : existingSubjects;
     return {
-      exam,
+      exams: [...new Set(savedExams)],
       subjects: savedSubjects,
       examMonth: parsed.examMonth ?? existingExamMonth ?? null,
       step: typeof parsed.step === "number" ? Math.min(3, Math.max(0, parsed.step)) : 0,
@@ -81,30 +81,36 @@ function StartFlow() {
 
   const subjectMap = useMemo(() => new Map(subjects.map((subject) => [subject.id, subject])), [subjects]);
   const optionalSubjects = useMemo(
-    () => subjects.filter((subject) => subject.id !== COMPULSORY_SUBJECT),
-    [subjects],
+    () => JAMB_SELECTABLE_SUBJECT_IDS.map((id) => ({
+      id,
+      name: JAMB_SELECTABLE_SUBJECT_LABELS[id],
+    })),
+    [],
   );
-  const availableIds = useMemo(() => subjects.map((subject) => subject.id), [subjects]);
+  const availableIds = useMemo(() => [COMPULSORY_SUBJECT, ...JAMB_SELECTABLE_SUBJECT_IDS], []);
   const normalizedJambSubjects = normalizeJambSelection(draft.subjects, availableIds);
 
   const canContinue =
     draft.step === 0
-      ? Boolean(draft.exam)
+      ? draft.exams.length > 0
       : draft.step === 1
-        ? draft.exam === "waec" || isValidJambSelection(draft.subjects, availableIds)
+        ? !draft.exams.includes("jamb") || isValidJambSelection(draft.subjects, availableIds)
         : draft.step === 2
           ? isValidExamMonth(draft.examMonth)
           : true;
 
-  const selectExam = (exam: OnboardingExam) => {
+  const toggleExam = (exam: OnboardingExam) => {
     setError("");
-    setDraft((current) => ({
-      ...current,
-      exam,
-      subjects: exam === "jamb"
-        ? normalizeJambSelection(current.subjects, availableIds)
-        : [],
-    }));
+    setDraft((current) => {
+      const exams = toggleSelectedExam(current.exams, exam);
+      return {
+        ...current,
+        exams,
+        subjects: exams.includes("jamb")
+          ? normalizeJambSelection(current.subjects, availableIds)
+          : current.subjects,
+      };
+    });
   };
 
   const toggleSubject = (subjectId: string) => {
@@ -127,19 +133,19 @@ function StartFlow() {
         current.step === 3
           ? 2
           : current.step === 2
-            ? current.exam === "jamb" ? 1 : 0
+            ? current.exams.includes("jamb") ? 1 : 0
             : Math.max(0, current.step - 1),
     }));
 
   const submit = async () => {
     if (submitting) return;
-    if (!draft.exam) return;
-    if (draft.exam === "jamb" && !isValidJambSelection(draft.subjects, availableIds)) {
+    if (!draft.exams.length) return;
+    if (draft.exams.includes("jamb") && !isValidJambSelection(draft.subjects, availableIds)) {
       setError("Choose exactly three subjects alongside compulsory English.");
       return;
     }
-    if (!isValidExamMonth(draft.examMonth)) {
-      setError("Select a valid examination month that is not in the past.");
+    if (draft.examMonth && !isValidExamMonth(draft.examMonth)) {
+      setError("Select a valid examination month, or leave it blank.");
       return;
     }
 
@@ -148,14 +154,14 @@ function StartFlow() {
     try {
       await completeOnboarding({
         name: sessionUser?.name,
-        exams: [draft.exam],
-        jambSubjects: draft.exam === "jamb" ? normalizedJambSubjects.filter((id) => id !== COMPULSORY_SUBJECT) : [],
-        examMonth: draft.examMonth,
-        subjects: draft.exam === "jamb"
+        exams: draft.exams,
+        jambSubjects: draft.exams.includes("jamb")
+          ? normalizedJambSubjects.filter((id) => id !== COMPULSORY_SUBJECT)
+          : [],
+        examMonth: draft.examMonth || null,
+        subjects: draft.exams.includes("jamb")
           ? normalizedJambSubjects
-          : draft.exam === "waec"
-            ? [COMPULSORY_SUBJECT]
-            : [],
+          : [COMPULSORY_SUBJECT],
       });
       window.localStorage.removeItem(STORAGE_KEY);
       await navigate({ to: "/studio", replace: true });
@@ -200,23 +206,23 @@ function StartFlow() {
             <p className="text-sm text-brass">Step 1</p>
             <h1 className="mt-2 font-display text-4xl">What exam are you preparing for?</h1>
             <div className="mt-8 grid gap-4 md:grid-cols-2">
-              <button type="button" onClick={() => selectExam("waec")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exam === "waec" ? "border-primary bg-soft" : "border-line bg-surface"}`}>
+              <button type="button" onClick={() => toggleExam("waec")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exams.includes("waec") ? "border-primary bg-soft" : "border-line bg-surface"}`}>
                 <p className="font-display text-2xl">WAEC</p>
                 <p className="mt-2 text-sm text-muted">West African Examination Council</p>
               </button>
-              <button type="button" onClick={() => selectExam("jamb")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exam === "jamb" ? "border-primary bg-soft" : "border-line bg-surface"}`}>
+              <button type="button" onClick={() => toggleExam("jamb")} className={`min-h-[120px] rounded-2xl border p-5 text-left ${draft.exams.includes("jamb") ? "border-primary bg-soft" : "border-line bg-surface"}`}>
                 <p className="font-display text-2xl">JAMB</p>
                 <p className="mt-2 text-sm text-muted">Joint Admissions and Matriculation Board</p>
               </button>
             </div>
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
             <div className="mt-8 flex gap-3">
-              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: current.exam === "jamb" ? 1 : 2 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
+              <button type="button" disabled={!canContinue} onClick={() => setDraft((current) => ({ ...current, step: current.exams.includes("jamb") ? 1 : 2 }))} className="min-h-11 bg-primary px-6 text-sm font-semibold text-primary-fg disabled:opacity-50">Continue</button>
             </div>
           </div>
         )}
 
-        {draft.step === 1 && draft.exam === "jamb" && (
+        {draft.step === 1 && draft.exams.includes("jamb") && (
           <div>
             <p className="text-sm text-brass">Step 2</p>
             <h1 className="mt-2 font-display text-4xl">Choose your JAMB subjects</h1>
@@ -228,7 +234,7 @@ function StartFlow() {
               <span className="rounded-full bg-soft px-2 py-1 text-xs font-medium text-primary">Locked</span>
             </div>
             <div className="mt-6 flex items-center justify-between">
-              <p className="font-medium">{draft.subjects.length - 1} of 3 chosen</p>
+              <p className="font-medium">{normalizedJambSubjects.length - 1} of 3 chosen</p>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -272,6 +278,13 @@ function StartFlow() {
                 onChange={(event) => setDraft((current) => ({ ...current, examMonth: event.target.value || null }))}
                 className="w-full border border-line bg-surface px-3 py-3"
               />
+              <button
+                type="button"
+                onClick={() => setDraft((current) => ({ ...current, examMonth: null }))}
+                className="min-h-11 self-start text-sm font-semibold text-primary"
+              >
+                I’m not sure yet — skip
+              </button>
             </div>
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
             <div className="mt-8 flex gap-3">
@@ -289,9 +302,9 @@ function StartFlow() {
               <p className="text-sm text-brass">Student</p>
               <p className="mt-2 font-display text-3xl">{sessionUser?.name || "Student"}</p>
               <div className="mt-4 space-y-2 text-sm">
-                <p><span className="text-muted">Exam:</span> {draft.exam === "jamb" ? "Joint Admissions and Matriculation Board" : "West African Examination Council"}</p>
-                <p><span className="text-muted">Subjects:</span> {draft.subjects.map((id) => subjectMap.get(id)?.name ?? id).join(", ")}</p>
-                <p><span className="text-muted">Exam month:</span> {new Date(`${draft.examMonth}-01T00:00:00`).toLocaleString("en-US", { month: "long", year: "numeric" })}</p>
+                <p><span className="text-muted">Exams:</span> {draft.exams.map((exam) => exam.toUpperCase()).join(" + ")}</p>
+                <p><span className="text-muted">Subjects:</span> {normalizedJambSubjects.map((id) => JAMB_SELECTABLE_SUBJECT_LABELS[id as keyof typeof JAMB_SELECTABLE_SUBJECT_LABELS] ?? subjectMap.get(id)?.name ?? id).join(", ")}</p>
+                <p><span className="text-muted">Exam month:</span> {draft.examMonth ? new Date(`${draft.examMonth}-01T00:00:00`).toLocaleString("en-US", { month: "long", year: "numeric" }) : "Not set"}</p>
               </div>
             </div>
             <p className="mt-6 text-sm text-muted">Your two free days start now.</p>

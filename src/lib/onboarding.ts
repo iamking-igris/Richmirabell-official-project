@@ -1,5 +1,11 @@
 export type OnboardingExam = "jamb" | "waec";
 
+export function toggleSelectedExam(exams: OnboardingExam[], exam: OnboardingExam): OnboardingExam[] {
+  return exams.includes(exam)
+    ? exams.filter((selected) => selected !== exam)
+    : [...exams, exam];
+}
+
 export const COMPULSORY_JAMB_SUBJECT = "english";
 export const JAMB_OPTIONAL_SUBJECT_LIMIT = 3;
 
@@ -13,8 +19,16 @@ export function normalizeJambSelection(values: string[], availableIds: string[])
 }
 
 export function isValidJambSelection(values: string[], availableIds: string[]): boolean {
+  const available = new Set(availableIds);
+  const electiveIds = [...new Set(
+    values
+      .filter((id) => id !== COMPULSORY_JAMB_SUBJECT)
+      .map((id) => id.trim().toLowerCase())
+      .filter((id) => available.has(id)),
+  )];
   const normalized = normalizeJambSelection(values, availableIds);
   return (
+    electiveIds.length === JAMB_OPTIONAL_SUBJECT_LIMIT &&
     normalized.length === 4 &&
     normalized[0] === COMPULSORY_JAMB_SUBJECT &&
     new Set(normalized).size === 4
@@ -22,7 +36,7 @@ export function isValidJambSelection(values: string[], availableIds: string[]): 
 }
 
 export function isValidExamMonth(value: string | null, now = new Date()): boolean {
-  if (!value) return false;
+  if (value === null || value === "") return true;
   if (!/^\d{4}-\d{2}$/.test(value)) return false;
   const [yearText, monthText] = value.split("-");
   const year = Number(yearText);
@@ -32,3 +46,11 @@ export function isValidExamMonth(value: string | null, now = new Date()): boolea
   const selected = year * 12 + (month - 1);
   return selected >= current;
 }
+
+export const JAMB_SELECTABLE_SUBJECT_IDS = ["mathematics", "physics", "chemistry", "biology"] as const;
+export const JAMB_SELECTABLE_SUBJECT_LABELS: Record<(typeof JAMB_SELECTABLE_SUBJECT_IDS)[number], string> = {
+  mathematics: "Mathematics",
+  physics: "Physics",
+  chemistry: "Chemistry",
+  biology: "Biology",
+};
